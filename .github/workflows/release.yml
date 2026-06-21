@@ -1,0 +1,53 @@
+# 打 `v*` tag(如 v0.1.0)时自动构建并发布到 PyPI。
+#
+# 用 PyPI Trusted Publishing(OIDC)——仓库里不存任何 token。
+# 首次使用前需在 PyPI 配置可信发布者(只配一次):
+#   pypi.org → 你的项目 → Publishing → Add a new publisher (GitHub Actions)
+#     Owner:           dengxuhui
+#     Repository:      igpsport-mcp
+#     Workflow name:   release.yml          # 必须与本文件名一致
+#     Environment:     pypi                  # 必须与下面 environment 一致
+# （项目得先在 PyPI 上存在——即至少手动发布过一次,或先用 pending publisher。)
+#
+# 发布新版本的标准流程:
+#   1. 改 pyproject.toml 的 version(如 0.1.1)
+#   2. git commit -am "release: 0.1.1" && git push
+#   3. git tag v0.1.1 && git push origin v0.1.1   ← 触发本 workflow
+
+name: Release to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest # 默认排除 integration(联网)与缺失 fixture 的用例
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC,Trusted Publishing 必需
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Build sdist + wheel
+        run: uv build
+      - name: Verify wasm is bundled
+        run: |
+          unzip -l dist/*.whl | grep -q 'edge_core_wasm_bg.wasm' \
+            && echo "wasm OK" || (echo "::error::wasm missing from wheel" && exit 1)
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
