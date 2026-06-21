@@ -35,9 +35,11 @@ uv tool install igpsport-mcp   # 或全局安装
 
 > 强烈建议填 `IGPSPORT_FTP` —— 没有它就算不出 IF / TSS / CTL / ATL / TSB(本工具的核心卖点)。
 
-## 接入 Claude Desktop / Claude Code
+## 接入 Claude
 
-把下面这段拷进 MCP 配置(Claude Desktop:`claude_desktop_config.json`),填好凭证即可:
+### Claude Desktop
+
+把下面这段拷进 `claude_desktop_config.json`(macOS:`~/Library/Application Support/Claude/`),填好凭证后**完全退出并重开** Claude Desktop:
 
 ```json
 {
@@ -55,6 +57,21 @@ uv tool install igpsport-mcp   # 或全局安装
   }
 }
 ```
+
+### Claude Code
+
+```bash
+claude mcp add igpsport --scope user \
+  --env IGPSPORT_USERNAME=你的手机号 \
+  --env IGPSPORT_PASSWORD=你的密码 \
+  --env IGPSPORT_FTP=250 \
+  --env IGPSPORT_LTHR=160 \
+  -- uvx igpsport-mcp
+```
+
+加完用 `/mcp` 或 `claude mcp list` 确认状态为 connected。
+
+> **连不上 / 找不到命令?** 多半是 `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `"uvx"` / `command` 换成 `which uvx` 输出的**绝对路径**(如 `/Users/你/.local/bin/uvx`)即可。
 
 ## 提供的 8 个工具
 
