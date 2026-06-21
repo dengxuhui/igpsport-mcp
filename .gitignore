@@ -1,0 +1,31 @@
+# 逆向阶段临时脚本 / 下载物(不入库)
+scratch/
+
+# 内部工作文档(spec / 开发计划 / 逆向笔记),不入开源仓库
+docs/
+
+# 本地个人偏好 / 私有上下文(不入库)
+CLAUDE.local.md
+
+# 含真实 GPS 的样本,脱敏前不入库
+tests/fixtures/sample.fit
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 缓存 / 凭证(运行期)
+.cache/
+*.local
+
+# OS / 编辑器
+.DS_Store
