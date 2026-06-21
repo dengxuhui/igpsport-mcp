@@ -46,6 +46,21 @@ def test_list_activities_normalizes_and_filters(tmp_path):
     assert out["activities"][0]["distance_km"] == 100.0
 
 
+def test_list_activities_pages_past_capped_pages(tmp_path):
+    # Server caps each page at 2 rows (< requested). The old "short page = end"
+    # heuristic stopped after June; the fix must keep paging back to the floor.
+    pages = [
+        [_raw(1, "2026.06.19"), _raw(2, "2026.06.10")],
+        [_raw(3, "2026.05.20"), _raw(4, "2026.04.15")],
+        [_raw(5, "2026.03.30"), _raw(6, "2026.02.01")],
+    ]
+    svc = _service(tmp_path, FakeClient(pages=pages))
+    out = svc.list_activities(start_date="2026-03-01", end_date="2026-06-30", limit=100)
+    ids = [a["ride_id"] for a in out["activities"]]
+    assert ids == ["1", "2", "3", "4", "5"]  # Feb (ride 6) is before the floor
+    assert out["total"] == 5
+
+
 def test_list_activities_caches_to_db(tmp_path):
     svc = _service(tmp_path, FakeClient(pages=[[_raw(7, "2026.06.19")]]))
     svc.list_activities(limit=10)

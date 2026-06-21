@@ -23,6 +23,10 @@ from . import _normalize as norm
 
 _PERIOD_DAYS = {"week": 7, "month": 30, "year": 365}
 
+# Server caps pageSize (~20); we just page until empty / past the date floor.
+_LIST_PAGE_SIZE = 50
+_MAX_LIST_PAGES = 100
+
 
 class IGPSportService:
     def __init__(
@@ -89,29 +93,40 @@ class IGPSportService:
         from ..storage import db as db_mod
 
         limit = max(1, min(limit, 100))
-        page_size = max(limit, 20)
         collected: list[dict[str, Any]] = []
-        page_no = 1
-        end_reached = False
+        seen_ids: set[str] = set()
+        more_pages = False
 
-        while len(collected) < offset + limit and page_no <= 50:
-            rows = self.client.list_activities(page_no, page_size)
+        # The server caps pageSize (≈20) regardless of what we ask, so the page
+        # is exhausted only on an empty response — never by "fewer rows than
+        # requested". Activities come newest-first (sort=1), which lets us stop
+        # once a page predates the date floor.
+        for page_no in range(1, _MAX_LIST_PAGES + 1):
+            rows = self.client.list_activities(page_no, _LIST_PAGE_SIZE)
             if not rows:
-                end_reached = True
                 break
-            for raw in rows:
-                item = norm.normalize_list_row(raw)
-                if norm.matches(item, start_date, end_date, sport_type):
-                    collected.append(item)
-            if len(rows) < page_size:
-                end_reached = True
+            items = [norm.normalize_list_row(r) for r in rows]
+            fresh = [it for it in items if it["ride_id"] not in seen_ids]
+            if not fresh:  # API repeated the last page; avoid looping
                 break
-            page_no += 1
+            for it in fresh:
+                seen_ids.add(it["ride_id"])
+                if norm.matches(it, start_date, end_date, sport_type):
+                    collected.append(it)
+
+            oldest = items[-1].get("start_time")
+            if start_date and oldest and oldest < start_date[:10]:
+                break
+            if not start_date and len(collected) >= offset + limit:
+                more_pages = True
+                break
+        else:
+            more_pages = True  # hit the page cap; assume more remain
 
         db_mod.upsert_activities(self.db, [norm.to_cache_row(i) for i in collected])
 
         window = collected[offset : offset + limit]
-        has_more = len(collected) > offset + limit or not end_reached
+        has_more = len(collected) > offset + limit or more_pages
         return {
             "activities": [norm.to_list_output(i) for i in window],
             "total": len(collected),
