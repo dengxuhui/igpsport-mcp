@@ -6,7 +6,18 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [{ name = "dengxuhui" }]
-keywords = ["mcp", "igpsport", "cycling", "training", "fit"]
+keywords = ["mcp", "igpsport", "cycling", "training", "fit", "power", "tss"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Environment :: Console",
+]
 dependencies = [
     "mcp>=1.2",
     "httpx>=0.27",
@@ -16,6 +27,11 @@ dependencies = [
     "cryptography>=42",
     "wasmtime>=21",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dengxuhui/igpsport-mcp"
+Repository = "https://github.com/dengxuhui/igpsport-mcp"
+Issues = "https://github.com/dengxuhui/igpsport-mcp/issues"
 
 [project.scripts]
 igpsport-mcp = "igpsport_mcp.__main__:main"
