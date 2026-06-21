@@ -1,0 +1,338 @@
+"""Orchestration shared by the MCP tools.
+
+Ties together the client (network), the FIT parser, the analysis layer and the
+SQLite cache. Tools are thin wrappers that call one method here and return its
+dict verbatim. FIT-dependent work funnels through ``_load_summary`` so the
+aggregate tools (stats / training load) can be tested without real FIT files.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
+
+import pandas as pd
+
+from ..analysis import compact, load, power
+from ..analysis import hr as hr_mod
+from ..analysis.summary import build_summary
+from ..config import Config
+from ..fit.parser import parse_fit, resample_to_1hz
+from . import _normalize as norm
+
+_PERIOD_DAYS = {"week": 7, "month": 30, "year": 365}
+
+
+class IGPSportService:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        client: Any | None = None,
+        db_conn: sqlite3.Connection | None = None,
+    ) -> None:
+        self._config = config
+        self._client = client
+        self._db = db_conn
+
+    # -- lazy deps ---------------------------------------------------------
+
+    @property
+    def client(self) -> Any:
+        if self._client is None:
+            from ..client.igpsport import IGPSportClient
+
+            self._client = IGPSportClient(self._config)
+        return self._client
+
+    @property
+    def db(self) -> sqlite3.Connection:
+        if self._db is None:
+            from ..storage import db as db_mod
+
+            self._db = db_mod.connect(self._config.db_path)
+        return self._db
+
+    @property
+    def _ftp(self) -> float | None:
+        return float(self._config.ftp) if self._config.ftp else None
+
+    @property
+    def _lthr(self) -> float | None:
+        return float(self._config.lthr) if self._config.lthr else None
+
+    # -- internal ----------------------------------------------------------
+
+    def _load_summary(self, ride_id: str | int) -> dict[str, Any]:
+        """Download + parse + compute a single activity's summary block."""
+        fit_path = self.client.download_fit(ride_id)
+        parsed = parse_fit(fit_path)
+        return build_summary(parsed, self._ftp, self._lthr)
+
+    def _activity_name(self, ride_id: str | int) -> str | None:
+        from ..storage import db as db_mod
+
+        cached = db_mod.get_activity(self.db, ride_id)
+        return cached.get("name") if cached else None
+
+    # -- tools -------------------------------------------------------------
+
+    def list_activities(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        sport_type: str = "cycling",
+    ) -> dict[str, Any]:
+        from ..storage import db as db_mod
+
+        limit = max(1, min(limit, 100))
+        page_size = max(limit, 20)
+        collected: list[dict[str, Any]] = []
+        page_no = 1
+        end_reached = False
+
+        while len(collected) < offset + limit and page_no <= 50:
+            rows = self.client.list_activities(page_no, page_size)
+            if not rows:
+                end_reached = True
+                break
+            for raw in rows:
+                item = norm.normalize_list_row(raw)
+                if norm.matches(item, start_date, end_date, sport_type):
+                    collected.append(item)
+            if len(rows) < page_size:
+                end_reached = True
+                break
+            page_no += 1
+
+        db_mod.upsert_activities(self.db, [norm.to_cache_row(i) for i in collected])
+
+        window = collected[offset : offset + limit]
+        has_more = len(collected) > offset + limit or not end_reached
+        return {
+            "activities": [norm.to_list_output(i) for i in window],
+            "total": len(collected),
+            "has_more": has_more,
+        }
+
+    def get_activity_summary(self, ride_id: str | int) -> dict[str, Any]:
+        result = self._load_summary(ride_id)
+        out = {
+            "ride_id": str(ride_id),
+            "name": self._activity_name(ride_id),
+            "start_time": result["start_time"],
+            "duration_s": result["duration_s"],
+            "summary": result["summary"],
+            "hr_zones_s": result["hr_zones_s"],
+            "power_zones_s": result["power_zones_s"],
+        }
+        if result["tss_estimated_from_hr"]:
+            out["tss_note"] = "estimated from HR"
+        return out
+
+    def get_activity_streams(
+        self,
+        ride_id: str | int,
+        channels: list[str] | None = None,
+        resolution: str = "10s",
+        start_offset_s: int = 0,
+        end_offset_s: int | None = None,
+    ) -> dict[str, Any]:
+        channels = channels or ["power", "hr"]
+        fit_path = self.client.download_fit(ride_id)
+        df = resample_to_1hz(parse_fit(fit_path).records)
+        if df.empty:
+            return {
+                "ride_id": str(ride_id),
+                "resolution": resolution,
+                "sample_count": 0,
+                "channels": {},
+            }
+
+        window = df.iloc[start_offset_s : end_offset_s if end_offset_s is not None else len(df)]
+        window_s = compact.resolution_to_seconds(resolution)
+        raw: dict[str, list[float]] = {}
+        for ch in channels:
+            col = norm.CHANNEL_FIELDS.get(ch)
+            if not col or col not in window.columns:
+                continue
+            series = window[col]
+            if ch == "speed":  # FIT m/s -> km/h to match the compact unit label
+                series = series * 3.6
+            raw[ch] = series.tolist()
+        compacted = compact.to_compact(raw, window_s)
+        sample_count = len(next(iter(compacted.values()))["values"]) if compacted else 0
+        return {
+            "ride_id": str(ride_id),
+            "resolution": resolution,
+            "start_offset_s": start_offset_s,
+            "end_offset_s": end_offset_s if end_offset_s is not None else len(df),
+            "sample_count": sample_count,
+            "channels": compacted,
+        }
+
+    def get_activity_laps(self, ride_id: str | int) -> dict[str, Any]:
+        fit_path = self.client.download_fit(ride_id)
+        parsed = parse_fit(fit_path)
+        df = resample_to_1hz(parsed.records)
+        activity_start = df["timestamp"].iloc[0] if not df.empty else None
+
+        laps = []
+        for i, lap in enumerate(parsed.laps):
+            lap_start = lap.get("start_time")
+            duration_s = lap.get("total_timer_time") or lap.get("total_elapsed_time") or 0
+            np_w = None
+            if activity_start is not None and lap_start is not None and "power" in df.columns:
+                start = pd.Timestamp(lap_start, tz="UTC")
+                seg = df[
+                    (df["timestamp"] >= start)
+                    & (df["timestamp"] < start + pd.Timedelta(seconds=duration_s))
+                ]
+                np_w = power.normalized_power(seg["power"].tolist())
+            offset = 0
+            if activity_start is not None and lap_start is not None:
+                offset = int((pd.Timestamp(lap_start, tz="UTC") - activity_start).total_seconds())
+            laps.append(
+                {
+                    "lap_index": i,
+                    "start_offset_s": offset,
+                    "duration_s": int(duration_s),
+                    "distance_km": round((lap.get("total_distance") or 0) / 1000, 2),
+                    "avg_power_w": _r(lap.get("avg_power")),
+                    "normalized_power_w": _r(np_w),
+                    "avg_hr_bpm": _r(lap.get("avg_heart_rate")),
+                    "avg_speed_kmh": round((lap.get("avg_speed") or 0) * 3.6, 2),
+                    "elevation_gain_m": _r(lap.get("total_ascent")),
+                }
+            )
+        return {"ride_id": str(ride_id), "laps": laps}
+
+    def get_athlete_profile(self) -> dict[str, Any]:
+        return {
+            "username": self._config.username,
+            "ftp_w": self._config.ftp,
+            "lthr_bpm": self._config.lthr,
+            "max_hr_bpm": None,
+            "weight_kg": None,
+            "hr_zones": hr_mod.hr_zone_bounds(self._lthr) if self._lthr else None,
+            "power_zones": power.power_zone_bounds(self._ftp) if self._ftp else None,
+        }
+
+    def get_athlete_stats(
+        self, period: str = "month", end_date: str | None = None
+    ) -> dict[str, Any]:
+        days = _PERIOD_DAYS.get(period)
+        end = _parse_date(end_date) or datetime.now(UTC).date()
+        start = None if days is None else end - timedelta(days=days)
+
+        listing = self.list_activities(
+            start_date=start.isoformat() if start else None,
+            end_date=end.isoformat(),
+            limit=100,
+        )
+        acts = listing["activities"]
+        total_distance = sum(a.get("distance_km") or 0 for a in acts)
+        total_duration_h = sum(a.get("duration_s") or 0 for a in acts) / 3600
+        total_elev = sum(a.get("elevation_gain_m") or 0 for a in acts)
+        return {
+            "period": period,
+            "start_date": start.isoformat() if start else None,
+            "end_date": end.isoformat(),
+            "ride_count": len(acts),
+            "total_distance_km": round(total_distance, 2),
+            "total_duration_h": round(total_duration_h, 2),
+            "total_elevation_m": round(total_elev, 1),
+            "total_tss": None,
+            "total_work_kj": None,
+            "avg_weekly_tss": None,
+            "note": "TSS totals need per-activity FIT analysis; use analyze_training_load",
+        }
+
+    def compare_activities(
+        self, ride_ids: list[str | int], metrics: list[str] | None = None
+    ) -> dict[str, Any]:
+        metrics = metrics or ["avg_power_w", "normalized_power_w", "avg_hr_bpm", "tss"]
+        summaries = {rid: self._load_summary(rid)["summary"] for rid in ride_ids}
+        comparison = []
+        for metric in metrics:
+            values = [
+                {"ride_id": str(rid), "value": summaries[rid].get(metric)} for rid in ride_ids
+            ]
+            nums = [v["value"] for v in values if isinstance(v["value"], (int, float))]
+            delta_pct = 0.0
+            if len(nums) >= 2 and min(nums) > 0:
+                delta_pct = round((max(nums) - min(nums)) / min(nums) * 100, 1)
+            comparison.append({"metric": metric, "values": values, "delta_pct": delta_pct})
+
+        biggest = max(comparison, key=lambda c: c["delta_pct"], default=None)
+        hint = (
+            f"Largest difference is in {biggest['metric']} ({biggest['delta_pct']}%)"
+            if biggest
+            else ""
+        )
+        return {"comparison": comparison, "narrative_hint": hint}
+
+    def analyze_training_load(self, days: int = 90, end_date: str | None = None) -> dict[str, Any]:
+        end = _parse_date(end_date) or datetime.now(UTC).date()
+        start = end - timedelta(days=days)
+        listing = self.list_activities(
+            start_date=start.isoformat(), end_date=end.isoformat(), limit=100
+        )
+
+        tss_by_date: dict[date, float] = {}
+        for act in listing["activities"]:
+            summary = self._load_summary(act["ride_id"])
+            tss = summary["summary"].get("tss")
+            day = _parse_date(act.get("start_time"))
+            if tss and day:
+                tss_by_date[day] = tss_by_date.get(day, 0.0) + tss
+
+        if not tss_by_date:
+            return {"end_date": end.isoformat(), "days": days, "daily": [], "current": None}
+
+        series = pd.Series(tss_by_date, dtype="float64")
+        df = load.compute_load(series)
+        window = df[df.index >= pd.Timestamp(start)]
+        daily = [
+            {
+                "date": idx.date().isoformat(),
+                "tss": round(row["tss"], 1),
+                "ctl": round(row["ctl"], 1),
+                "atl": round(row["atl"], 1),
+                "tsb": round(row["tsb"], 1),
+            }
+            for idx, row in window.iterrows()
+        ]
+        last = df.iloc[-1]
+        return {
+            "end_date": end.isoformat(),
+            "days": days,
+            "daily": daily,
+            "current": {
+                "ctl": round(last["ctl"], 1),
+                "atl": round(last["atl"], 1),
+                "tsb": round(last["tsb"], 1),
+                "interpretation": load.interpret_form(last["ctl"], last["atl"], last["tsb"]),
+            },
+        }
+
+
+def _r(value: Any, ndigits: int = 1) -> float | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    return round(float(value), ndigits)
+
+
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
