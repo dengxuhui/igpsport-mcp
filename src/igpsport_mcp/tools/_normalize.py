@@ -150,6 +150,19 @@ def normalize_rank_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def normalize_segment_effort(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a single segment effort (personal record) row."""
+    return {
+        "ride_id": str(row["rideId"]) if row.get("rideId") else None,
+        "title": row.get("title"),
+        "start_date": _iso_date(row.get("rideStartTime")),
+        "time_s": row.get("rideTotalTime"),
+        "avg_speed_kmh": (
+            round(row["avgSpeed"], 1) if row.get("avgSpeed") is not None else None
+        ),
+    }
+
+
 def to_cache_row(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "ride_id": item["ride_id"],

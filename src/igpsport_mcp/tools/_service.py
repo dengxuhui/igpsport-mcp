@@ -353,16 +353,17 @@ class IGPSportService:
 
         base = norm.normalize_segment_detail(detail)
 
-        # Personal record from score check.
-        base["my_record"] = None
-        if score and score.get("rideTotalTime"):
-            base["my_record"] = {
-                "time_s": score.get("rideTotalTime"),
-                "avg_speed_kmh": (
-                    round(score["avgSpeed"], 1) if score.get("avgSpeed") else None
-                ),
-                "finish_date": norm._iso_date(score.get("finishDate")),
-            }
+        # Personal efforts from score check.
+        # Two possible shapes:
+        #   - Has records: {"code":0,"data":[...]} → list of effort objects
+        #   - No records: {"code":0,"data":{"openDialog":false,...}} → dict
+        base["my_efforts"] = []
+        if isinstance(score, list):
+            base["my_efforts"] = [norm.normalize_segment_effort(e) for e in score]
+            best = min(score, key=lambda e: e.get("rideTotalTime", float("inf")))
+            base["my_best"] = norm.normalize_segment_effort(best)
+        else:
+            base["my_best"] = None
 
         # KOM from topRecords.
         king = (top or {}).get("segmentsKing")
