@@ -1,6 +1,6 @@
 # igpsport-mcp
 
-把 **iGPSport 骑行数据**接入 Claude 等 LLM 客户端的本地 [MCP](https://modelcontextprotocol.io) server。用自然语言分析你的训练:_"我这周训练负荷怎么样?"_ _"对比一下上周和这周的两次长距离骑行。"_
+把 **iGPSport 骑行数据**接入 Claude 等 LLM 客户端的本地 [MCP](https://modelcontextprotocol.io) server。用自然语言分析你的训练:_"我这周训练负荷怎么样?"_ _"对比一下上周和这周的两次长距离骑行。"_ _"我收藏的爬坡赛段排名怎样?"_ _"今年骑了多少公里,有哪些个人最佳?"_
 
 **差异化**:NP / IF / TSS / CTL / ATL / TSB 这些派生训练指标在 **MCP 层算好**再返回——LLM 拿到的是可直接讲故事的数字,而不是一堆原始 stream。
 
@@ -28,12 +28,12 @@ uv tool install igpsport-mcp   # 或全局安装
 |---|---|---|
 | `IGPSPORT_USERNAME` | ✅ | iGPSport 账号(手机号) |
 | `IGPSPORT_PASSWORD` | ✅ | 密码 |
-| `IGPSPORT_FTP` | 选填 | 功率阈值(瓦)。没填则无 IF/TSS/功率区间 |
-| `IGPSPORT_LTHR` | 选填 | 乳酸阈心率(bpm)。用于心率区间与 hrTSS 兜底 |
+| `IGPSPORT_FTP` | 选填 | 功率阈值(瓦)。**不填会自动读取 iGPSport 账号里设置的 FTP**;填了则覆盖 |
+| `IGPSPORT_LTHR` | 选填 | 乳酸阈心率(bpm),用于心率区间与 hrTSS 兜底。**不填同样自动从 iGPSport 读取**;填了则覆盖 |
 | `IGPSPORT_CACHE_DIR` | 选填 | 缓存目录,默认 `~/.cache/igpsport-mcp` |
 | `IGPSPORT_LOG_LEVEL` | 选填 | 默认 `INFO` |
 
-> 强烈建议填 `IGPSPORT_FTP` —— 没有它就算不出 IF / TSS / CTL / ATL / TSB(本工具的核心卖点)。
+> FTP / LTHR 现在默认从你 iGPSport 账号的运动信息里自动读取(还会带出体重、最大心率),所以**通常无需手动填**。只有当你想用与 App 不同的阈值时,才设这两个环境变量来覆盖。若账号里也没设 FTP,则无法计算 IF / TSS / CTL / ATL / TSB —— 请到 iGPSport 里补上,或填 `IGPSPORT_FTP`。
 
 ## 接入 Claude
 
@@ -49,14 +49,14 @@ uv tool install igpsport-mcp   # 或全局安装
       "args": ["igpsport-mcp"],
       "env": {
         "IGPSPORT_USERNAME": "你的手机号",
-        "IGPSPORT_PASSWORD": "你的密码",
-        "IGPSPORT_FTP": "250",
-        "IGPSPORT_LTHR": "160"
+        "IGPSPORT_PASSWORD": "你的密码"
       }
     }
   }
 }
 ```
+
+> FTP / LTHR 默认自动从 iGPSport 账号读取,无需填写。只有想覆盖 App 里的阈值时,才在 `env` 里加 `"IGPSPORT_FTP": "250"`、`"IGPSPORT_LTHR": "160"`。
 
 ### Claude Code
 
@@ -64,16 +64,18 @@ uv tool install igpsport-mcp   # 或全局安装
 claude mcp add igpsport --scope user \
   --env IGPSPORT_USERNAME=你的手机号 \
   --env IGPSPORT_PASSWORD=你的密码 \
-  --env IGPSPORT_FTP=250 \
-  --env IGPSPORT_LTHR=160 \
   -- uvx igpsport-mcp
 ```
+
+> 同样,需要覆盖阈值时再追加 `--env IGPSPORT_FTP=250 --env IGPSPORT_LTHR=160`。
 
 加完用 `/mcp` 或 `claude mcp list` 确认状态为 connected。
 
 > **连不上 / 找不到命令?** 多半是 `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `"uvx"` / `command` 换成 `which uvx` 输出的**绝对路径**(如 `/Users/你/.local/bin/uvx`)即可。
 
-## 提供的 8 个工具
+## 提供的 12 个工具
+
+**活动与训练(8)**
 
 | 工具 | 用途 |
 |---|---|
@@ -81,10 +83,24 @@ claude mcp add igpsport --scope user \
 | `get_activity_summary` | 单次活动派生指标(NP/IF/TSS/work、心率与功率区间停留时间) |
 | `get_activity_streams` | 时间序列(强制降采样 + 通道选择,token 友好) |
 | `get_activity_laps` | 圈/分段数据(逐圈 NP) |
-| `get_athlete_profile` | 训练参数(FTP/LTHR)与区间边界 |
-| `get_athlete_stats` | 周期聚合统计 |
+| `get_athlete_profile` | 训练参数:FTP/LTHR(自动读 iGPSport 或用环境变量覆盖);体重、最大心率始终从 iGPSport 读取;含区间边界 |
+| `get_athlete_stats` | 周期聚合统计(本地从活动列表算) |
 | `compare_activities` | 多次活动对比(2–5 条) |
 | `analyze_training_load` | CTL/ATL/TSB 趋势 + 状态解读(杀手 query) |
+
+**赛段(3)**
+
+| 工具 | 用途 |
+|---|---|
+| `list_segments_collected` | 我收藏(收星)的赛段列表,含我的最好成绩 |
+| `get_segment_detail` | 赛段详情:距离/坡度/爬升 + KOM + 最快榜 + 我的 PR |
+| `get_segment_rank` | 赛段排行榜(`query_type` 1=总榜、2=年度等),含我的排名 |
+
+**统计与成就(1)**
+
+| 工具 | 用途 |
+|---|---|
+| `get_member_statistics` | 官方年度统计与个人最佳:总里程/时长/卡路里/TSS、逐月里程、距离里程碑、各项 PR(最远/最久/最快/最大功率/最大爬升) |
 
 ## 派生指标说明
 

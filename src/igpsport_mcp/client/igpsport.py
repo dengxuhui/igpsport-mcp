@@ -205,6 +205,30 @@ class IGPSportClient:
         dest.write_bytes(content)
         return dest
 
+    def get_member_statistics(
+        self,
+        *,
+        time: str,
+        stat_type: int = 2,
+        distance_unit: int = 0,
+        big_sport_type: int = -1,
+    ) -> dict[str, Any]:
+        """Server-side member statistics: totals, monthly axis, milestones, PRs.
+
+        ``time`` is the anchor date (YYYY-MM-DD); ``stat_type`` 2 = yearly view.
+        The query-string order mirrors the official client because it is part of
+        the signed payload — do not reorder.
+        """
+        full_path = (
+            f"{ep.PATH_MEMBER_STATISTICS}?distanceUnit={distance_unit}"
+            f"&time={time}&type={stat_type}&bigSportType={big_sport_type}"
+        )
+        return self._request_business("GET", full_path, jwt=self._jwt())
+
+    def get_user_interval_info(self) -> dict[str, Any]:
+        """Athlete training params: FTP/LTHR/maxHR/weight + configured zone tables."""
+        return self._request_business("GET", ep.PATH_USER_INTERVAL_INFO, jwt=self._jwt())
+
     # -- segment (赛段) endpoints ------------------------------------------
 
     def list_segments_collected(

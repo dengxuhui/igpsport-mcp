@@ -8,6 +8,7 @@ aggregate tools (stats / training load) can be tested without real FIT files.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -21,7 +22,11 @@ from ..config import Config
 from ..fit.parser import parse_fit, resample_to_1hz
 from . import _normalize as norm
 
+logger = logging.getLogger(__name__)
+
 _PERIOD_DAYS = {"week": 7, "month": 30, "year": 365}
+
+_UNSET: Any = object()
 
 # Server caps pageSize (~20); we just page until empty / past the date floor.
 _LIST_PAGE_SIZE = 50
@@ -39,6 +44,7 @@ class IGPSportService:
         self._config = config
         self._client = client
         self._db = db_conn
+        self._member_cache: Any = _UNSET
 
     # -- lazy deps ---------------------------------------------------------
 
@@ -60,13 +66,39 @@ class IGPSportService:
 
     @property
     def _ftp(self) -> float | None:
-        return float(self._config.ftp) if self._config.ftp else None
+        """FTP from config (override) or, failing that, the iGPSport profile."""
+        if self._config.ftp:
+            return float(self._config.ftp)
+        ftp = (self._member_info() or {}).get("ftp")
+        return float(ftp) if ftp else None
 
     @property
     def _lthr(self) -> float | None:
-        return float(self._config.lthr) if self._config.lthr else None
+        """LTHR from config (override) or, failing that, the iGPSport profile."""
+        if self._config.lthr:
+            return float(self._config.lthr)
+        lthr = (self._member_info() or {}).get("lthr")
+        return float(lthr) if lthr else None
 
     # -- internal ----------------------------------------------------------
+
+    def _member_info(self) -> dict[str, Any] | None:
+        """Fetch (once, cached) the athlete's iGPSport profile ``member`` block.
+
+        Best-effort: a missing endpoint or any network/API error degrades to
+        ``None`` so analysis still runs (just without server-side FTP/LTHR).
+        """
+        if self._member_cache is _UNSET:
+            getter = getattr(self.client, "get_user_interval_info", None)
+            if getter is None:
+                self._member_cache = None
+            else:
+                try:
+                    self._member_cache = (getter() or {}).get("member") or {}
+                except Exception as exc:  # network / API drift must not break analysis
+                    logger.warning("UserIntervalInfo fetch failed: %s", exc)
+                    self._member_cache = None
+        return self._member_cache
 
     def _load_summary(self, ride_id: str | int) -> dict[str, Any]:
         """Download + parse + compute a single activity's summary block."""
@@ -226,14 +258,24 @@ class IGPSportService:
         return {"ride_id": str(ride_id), "laps": laps}
 
     def get_athlete_profile(self) -> dict[str, Any]:
+        # Always read the iGPSport profile: weight / maxHR live only there, and
+        # FTP/LTHR fall back to it when not overridden via env. Best-effort —
+        # _member_info degrades to None on any failure.
+        member = self._member_info() or {}
+        ftp = self._ftp
+        lthr = self._lthr
         return {
             "username": self._config.username,
-            "ftp_w": self._config.ftp,
-            "lthr_bpm": self._config.lthr,
-            "max_hr_bpm": None,
-            "weight_kg": None,
-            "hr_zones": hr_mod.hr_zone_bounds(self._lthr) if self._lthr else None,
-            "power_zones": power.power_zone_bounds(self._ftp) if self._ftp else None,
+            "nickname": member.get("nickName"),
+            "ftp_w": _as_num(ftp),
+            "ftp_source": "config" if self._config.ftp else ("igpsport" if ftp else None),
+            "lthr_bpm": _as_num(lthr),
+            "lthr_source": "config" if self._config.lthr else ("igpsport" if lthr else None),
+            "max_hr_bpm": member.get("mhr"),
+            "weight_kg": member.get("weight"),
+            "height_cm": member.get("height"),
+            "hr_zones": hr_mod.hr_zone_bounds(lthr) if lthr else None,
+            "power_zones": power.power_zone_bounds(ftp) if ftp else None,
         }
 
     def get_athlete_stats(
@@ -265,6 +307,21 @@ class IGPSportService:
             "avg_weekly_tss": None,
             "note": "TSS totals need per-activity FIT analysis; use analyze_training_load",
         }
+
+    def get_member_statistics(
+        self,
+        time: str | None = None,
+        stat_type: int = 2,
+        big_sport_type: int = -1,
+    ) -> dict[str, Any]:
+        day = time or datetime.now(UTC).date().isoformat()
+        data = self.client.get_member_statistics(
+            time=day, stat_type=stat_type, big_sport_type=big_sport_type
+        )
+        out = norm.normalize_member_statistics(data or {})
+        out["time"] = day
+        out["stat_type"] = stat_type
+        return out
 
     def compare_activities(
         self, ride_ids: list[str | int], metrics: list[str] | None = None
@@ -401,6 +458,14 @@ class IGPSportService:
             "personal_rank": norm.normalize_rank_row(personal) if personal else None,
             "segment_name": None,  # caller can enrich
         }
+
+
+def _as_num(value: Any) -> int | float | None:
+    """Present a numeric as int when integral (250.0 -> 250), else float."""
+    if value is None:
+        return None
+    f = float(value)
+    return int(f) if f.is_integer() else f
 
 
 def _r(value: Any, ndigits: int = 1) -> float | None:

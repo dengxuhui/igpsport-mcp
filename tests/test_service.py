@@ -6,9 +6,11 @@ from igpsport_mcp.tools._service import IGPSportService
 
 
 class FakeClient:
-    def __init__(self, pages=None, fit_path=None):
+    def __init__(self, pages=None, fit_path=None, member_stats=None):
         self._pages = pages or []
         self._fit_path = fit_path
+        self._member_stats = member_stats
+        self.member_stats_calls = []
 
     def list_activities(self, page_no, page_size):
         idx = page_no - 1
@@ -16,6 +18,24 @@ class FakeClient:
 
     def download_fit(self, ride_id):
         return self._fit_path
+
+    def get_member_statistics(self, *, time, stat_type=2, big_sport_type=-1):
+        self.member_stats_calls.append((time, stat_type, big_sport_type))
+        return self._member_stats
+
+
+def _client_with_interval(interval_info, **kw):
+    """A FakeClient that also exposes get_user_interval_info (call-counted)."""
+
+    client = FakeClient(**kw)
+    client.interval_info_calls = 0
+
+    def get_user_interval_info():
+        client.interval_info_calls += 1
+        return interval_info
+
+    client.get_user_interval_info = get_user_interval_info
+    return client
 
 
 def _raw(ride_id, day, dist_m=100000, asc=800, dur=12600):
@@ -85,6 +105,73 @@ def test_get_athlete_profile_without_params(tmp_path):
     assert prof["power_zones"] is None
 
 
+_INTERVAL = {
+    "member": {
+        "nickName": "Aerxuhui",
+        "ftp": 233,
+        "lthr": 171,
+        "mhr": 190,
+        "weight": 74.0,
+        "height": 177,
+    }
+}
+
+
+def test_profile_reads_ftp_lthr_from_igpsport_when_unset(tmp_path):
+    client = _client_with_interval(_INTERVAL)
+    svc = _service(tmp_path, client)
+    prof = svc.get_athlete_profile()
+    assert prof["ftp_w"] == 233 and prof["ftp_source"] == "igpsport"
+    assert prof["lthr_bpm"] == 171 and prof["lthr_source"] == "igpsport"
+    assert prof["max_hr_bpm"] == 190
+    assert prof["weight_kg"] == 74.0
+    assert prof["height_cm"] == 177
+    assert prof["nickname"] == "Aerxuhui"
+    assert prof["power_zones"]["z4"] == [209.7, 244.7]  # [0.90, 1.05] * 233
+
+
+def test_profile_config_overrides_server_ftp(tmp_path):
+    client = _client_with_interval(_INTERVAL)
+    svc = _service(tmp_path, client, IGPSPORT_FTP="250")
+    prof = svc.get_athlete_profile()
+    assert prof["ftp_w"] == 250 and prof["ftp_source"] == "config"
+    # LTHR not configured -> still filled from the server.
+    assert prof["lthr_bpm"] == 171 and prof["lthr_source"] == "igpsport"
+
+
+def test_profile_enriches_weight_even_when_thresholds_configured(tmp_path):
+    # FTP/LTHR overridden by env, but weight / maxHR still come from the server.
+    client = _client_with_interval(_INTERVAL)
+    svc = _service(tmp_path, client, IGPSPORT_FTP="250", IGPSPORT_LTHR="160")
+    prof = svc.get_athlete_profile()
+    assert prof["ftp_w"] == 250 and prof["ftp_source"] == "config"
+    assert prof["lthr_bpm"] == 160 and prof["lthr_source"] == "config"
+    assert prof["weight_kg"] == 74.0
+    assert prof["max_hr_bpm"] == 190
+    assert client.interval_info_calls == 1
+
+
+def test_member_info_fetched_once_and_cached(tmp_path):
+    client = _client_with_interval(_INTERVAL)
+    svc = _service(tmp_path, client)
+    svc.get_athlete_profile()
+    assert svc._ftp == 233.0
+    assert svc._lthr == 171.0
+    assert client.interval_info_calls == 1  # cached across all three reads
+
+
+def test_member_info_failure_degrades_to_none(tmp_path):
+    client = FakeClient()
+
+    def boom():
+        raise RuntimeError("network down")
+
+    client.get_user_interval_info = boom
+    svc = _service(tmp_path, client)
+    prof = svc.get_athlete_profile()
+    assert prof["ftp_w"] is None and prof["power_zones"] is None
+
+
 def test_analyze_training_load(tmp_path, monkeypatch):
     pages = [[_raw(1, "2026.06.01"), _raw(2, "2026.06.15"), _raw(3, "2026.06.20")]]
     svc = _service(tmp_path, FakeClient(pages=pages))
@@ -128,6 +215,50 @@ def test_get_athlete_stats(tmp_path):
     assert stats["total_distance_km"] == 50.0
     assert stats["total_duration_h"] == 1.0
     assert stats["total_elevation_m"] == 500.0
+
+
+def test_get_member_statistics(tmp_path):
+    payload = {
+        "statisticsData": {
+            "totalCount": 138,
+            "totalDistance": 4340509.0,
+            "totalTimerTime": 580032,
+            "avgSpeed": 7.4832234,
+            "sumTotalAscent": 19748.0,
+            "totalCalories": 96834,
+            "totalPwrTSS": 9613.5,
+        },
+        "axis": [{"time": "2026/01", "totalCount": 22, "totalTimerTime": 76515.0, "value": 572.5}],
+        "milestoneList": [{"count": 135, "distance": "10"}],
+        "personalBestList": [
+            {
+                "activityId": 47721422,
+                "keyName": "MaxDistance",
+                "keyLabel": "最远距离",
+                "keyTime": "2026-04-25 08:53:11",
+                "keyValue": "178207.23",
+            }
+        ],
+    }
+    client = FakeClient(member_stats=payload)
+    svc = _service(tmp_path, client)
+    out = svc.get_member_statistics(time="2026-06-24")
+    assert client.member_stats_calls == [("2026-06-24", 2, -1)]
+    assert out["time"] == "2026-06-24"
+    assert out["stat_type"] == 2
+    assert out["totals"]["distance_km"] == 4340.51
+    assert out["monthly"][0]["distance_km"] == 572.5
+    assert out["personal_bests"][0]["value"] == 178.21
+
+
+def test_get_member_statistics_defaults_time_to_today(tmp_path):
+    client = FakeClient(member_stats={})
+    svc = _service(tmp_path, client)
+    svc.get_member_statistics()
+    assert len(client.member_stats_calls) == 1
+    assert client.member_stats_calls[0][1:] == (2, -1)
+    # default time is an ISO date string
+    assert len(client.member_stats_calls[0][0]) == 10
 
 
 # --- real-FIT paths (skip without the local fixture) ---

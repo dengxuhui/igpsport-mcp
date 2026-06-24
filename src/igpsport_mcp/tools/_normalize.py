@@ -38,6 +38,18 @@ def _iso_date(value: Any) -> str | None:
     return text[:10] or None
 
 
+def _iso_datetime(value: Any, tz: str = "+08:00") -> str | None:
+    """Convert "YYYY-MM-DD HH:MM:SS" (Asia/Shanghai local) to ISO 8601 w/ offset."""
+    if not value:
+        return None
+    text = str(value).strip().replace("/", "-")
+    if " " in text:
+        text = text.replace(" ", "T", 1)
+    if "T" in text and "+" not in text and not text.endswith("Z"):
+        text += tz
+    return text
+
+
 def normalize_list_row(row: dict[str, Any]) -> dict[str, Any]:
     ride_id = _first(row, "rideId", "id", "activityId")
     distance_m = _first(row, "rideDistance")
@@ -154,6 +166,88 @@ def normalize_segment_effort(row: dict[str, Any]) -> dict[str, Any]:
         "start_date": _iso_date(row.get("rideStartTime")),
         "time_s": row.get("rideTotalTime"),
         "avg_speed_kmh": (round(row["avgSpeed"], 1) if row.get("avgSpeed") is not None else None),
+    }
+
+
+# -- member statistics helpers ----------------------------------------------
+
+# keyName -> (output unit, raw->display converter). Raw values come in SI base
+# units (metres, seconds, m/s); power is already watts and ascent already metres.
+_PB_UNITS: dict[str, tuple[str, Any]] = {
+    "MaxDistance": ("km", lambda v: round(v / 1000, 2)),
+    "MaxTime": ("h", lambda v: round(v / 3600, 2)),
+    "MaxAvgSpeed": ("km/h", lambda v: round(v * 3.6, 2)),
+    "MaxMaxSpeed": ("km/h", lambda v: round(v * 3.6, 2)),
+    "MaxClimbinSpeed": ("m", lambda v: round(v, 1)),
+    "MaxAvgPower": ("W", lambda v: round(v)),
+    "MaxMaxPower": ("W", lambda v: round(v)),
+}
+
+
+def normalize_personal_best(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a single personal-best (PR) row, converting to display units."""
+    try:
+        raw = float(row["keyValue"]) if row.get("keyValue") is not None else None
+    except (TypeError, ValueError):
+        raw = None
+    unit: str | None = None
+    value: float | None = raw
+    conv = _PB_UNITS.get(row.get("keyName"))
+    if conv and raw is not None:
+        unit, fn = conv
+        value = fn(raw)
+    return {
+        "metric": row.get("keyName"),
+        "label": row.get("keyLabel"),
+        "value": value,
+        "unit": unit,
+        "ride_id": str(row["activityId"]) if row.get("activityId") else None,
+        "achieved_at": _iso_datetime(row.get("keyTime")),
+    }
+
+
+def normalize_stat_axis(point: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one bucket of the monthly distance axis."""
+    timer_s = point.get("totalTimerTime")
+    return {
+        "period": point.get("time"),
+        "distance_km": point.get("value"),
+        "ride_count": point.get("totalCount"),
+        "duration_h": round(timer_s / 3600, 2) if timer_s is not None else None,
+    }
+
+
+def normalize_milestone(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a distance milestone (# of rides past a distance threshold)."""
+    distance = row.get("distance")
+    try:
+        distance_km = int(float(distance)) if distance is not None else None
+    except (TypeError, ValueError):
+        distance_km = distance
+    return {"distance_km": distance_km, "ride_count": row.get("count")}
+
+
+def normalize_member_statistics(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize the getMemberDataStatistics response to compact, unit-corrected shape."""
+    stats = data.get("statisticsData") or {}
+    distance_m = stats.get("totalDistance")
+    timer_s = stats.get("totalTimerTime")
+    avg_speed = stats.get("avgSpeed")
+    return {
+        "totals": {
+            "ride_count": stats.get("totalCount"),
+            "distance_km": round(distance_m / 1000, 2) if distance_m is not None else None,
+            "duration_h": round(timer_s / 3600, 2) if timer_s is not None else None,
+            "elevation_m": stats.get("sumTotalAscent"),
+            "calories_kcal": stats.get("totalCalories"),
+            "avg_speed_kmh": round(avg_speed * 3.6, 2) if avg_speed is not None else None,
+            "tss": stats.get("totalPwrTSS"),
+        },
+        "monthly": [normalize_stat_axis(p) for p in (data.get("axis") or [])],
+        "milestones": [normalize_milestone(m) for m in (data.get("milestoneList") or [])],
+        "personal_bests": [
+            normalize_personal_best(b) for b in (data.get("personalBestList") or [])
+        ],
     }
 
 

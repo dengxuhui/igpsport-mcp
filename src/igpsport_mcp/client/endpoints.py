@@ -27,6 +27,12 @@ PATH_LOGIN = "/service/auth/account/login"
 PATH_QUERY_ACTIVITY = "/service/web-gateway/web-analyze/activity/queryMyActivity"
 PATH_DOWNLOAD_URL = "/service/web-gateway/web-analyze/activity/getDownloadUrl/{ride_id}"
 
+# Member statistics / personal bests (年度统计 + 我的成就).
+PATH_MEMBER_STATISTICS = "/service/sportg/sporth/memberRecordPlus/getMemberDataStatisticsV4"
+
+# Athlete training params (FTP/LTHR/maxHR/weight + configured zones).
+PATH_USER_INTERVAL_INFO = "/service/mobile/api/v2/User/UserIntervalInfo"
+
 # Segment (赛段) endpoints — same signing + JWT auth.
 _SEG = "/service/web-gateway/segments4j"
 PATH_SEGMENT_MY_COLLECT = f"{_SEG}/segments/queryMyCollect"

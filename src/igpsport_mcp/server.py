@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_server(config: Config | None = None) -> FastMCP:
-    """Build the FastMCP instance with all 11 tools registered.
+    """Build the FastMCP instance with all 12 tools registered.
 
     Network/DB dependencies are created lazily by the service, so the server
     constructs (and completes the stdio handshake) without credentials.
