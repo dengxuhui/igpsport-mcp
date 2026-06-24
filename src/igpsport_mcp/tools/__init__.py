@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 def register_all(server: FastMCP, service: IGPSportService) -> None:
-    from . import activities, athlete, compare, laps, streams, training_load
+    from . import activities, athlete, compare, laps, segments, streams, training_load
 
-    for module in (activities, streams, laps, athlete, compare, training_load):
+    for module in (activities, streams, laps, athlete, compare, training_load, segments):
         module.register(server, service)

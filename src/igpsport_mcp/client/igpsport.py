@@ -1,9 +1,10 @@
-"""IGPSportClient: login, list activities, download FIT.
+"""IGPSportClient: login, list activities, download FIT, segments.
 
-Only three core endpoints are maintained (login / queryMyActivity /
-getDownloadUrl); everything else is parsed locally from the FIT file. Every
-request carries a WASM signature; authed requests also carry the JWT. Network
-errors retry 3x with exponential backoff.
+Maintains the 3 core activity endpoints (login / queryMyActivity /
+getDownloadUrl) plus 11 segment endpoints; activity analytics are parsed
+locally from the FIT file. Every request carries a WASM signature; authed
+requests also carry the JWT. Network errors retry 3x with exponential
+backoff.
 """
 
 from __future__ import annotations
@@ -27,6 +28,17 @@ logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _BACKOFF_BASE_S = 0.5
+
+
+def _extract_rows(data: Any) -> list[dict[str, Any]]:
+    """Extract ``rows`` from a paginated API response ``{rows: [...], ...}``."""
+    if isinstance(data, dict):
+        rows = data.get("rows") or data.get("list") or []
+    elif isinstance(data, list):
+        rows = data
+    else:
+        rows = []
+    return list(rows)
 
 
 class IGPSportClient:
@@ -192,3 +204,97 @@ class IGPSportClient:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(content)
         return dest
+
+    # -- segment (赛段) endpoints ------------------------------------------
+
+    def list_segments_collected(
+        self, page_no: int = 1, page_size: int = 20
+    ) -> list[dict[str, Any]]:
+        """List segments the user has collected (starred)."""
+        full_path = f"{ep.PATH_SEGMENT_MY_COLLECT}?pageNo={page_no}&pageSize={page_size}"
+        return _extract_rows(self._request_business("GET", full_path, jwt=self._jwt()))
+
+    def list_segments_created(
+        self, page_no: int = 1, page_size: int = 20
+    ) -> list[dict[str, Any]]:
+        """List segments the user has created."""
+        full_path = f"{ep.PATH_SEGMENT_MY_CREATE}?pageNo={page_no}&pageSize={page_size}"
+        return _extract_rows(self._request_business("GET", full_path, jwt=self._jwt()))
+
+    def get_segment_detail(self, segments_id: str) -> dict[str, Any]:
+        """Get segment detail: name, distance, elevation, grade, etc."""
+        full_path = ep.PATH_SEGMENT_DETAIL.format(segments_id=segments_id)
+        return self._request_business("GET", full_path, jwt=self._jwt())
+
+    def get_segment_overview(self, segments_id: str) -> dict[str, Any]:
+        """Get segment overview (可能含 KOM 时间)."""
+        full_path = ep.PATH_SEGMENT_OVERVIEW.format(segments_id=segments_id)
+        return self._request_business("GET", full_path, jwt=self._jwt())
+
+    def get_segment_score_check(self, segments_id: str) -> dict[str, Any]:
+        """Check your personal record on a segment."""
+        full_path = ep.PATH_SEGMENT_SCORE_CHECK.format(segments_id=segments_id)
+        return self._request_business("GET", full_path, jwt=self._jwt())
+
+    def get_segment_rank(
+        self, segments_id: str, *, page_no: int = 1, page_size: int = 30, query_type: int = 1
+    ) -> dict[str, Any]:
+        """Get segment leaderboard (rank list + personal rank)."""
+        full_path = (
+            f"{ep.PATH_SEGMENT_RANK}?pageNo={page_no}&pageSize={page_size}"
+            f"&segmentsId={segments_id}&queryType={query_type}"
+        )
+        return self._request_business("GET", full_path, jwt=self._jwt())
+
+    def get_segment_top_records(self, segments_id: str) -> dict[str, Any]:
+        """Get fastest times + KOM/QOM on a segment."""
+        full_path = ep.PATH_SEGMENT_TOP_RECORDS.format(segments_id=segments_id)
+        return self._request_business("GET", full_path, jwt=self._jwt())
+
+    def get_segment_recent_records(self, segments_id: str) -> dict[str, Any]:
+        """Get recent efforts on a segment."""
+        full_path = ep.PATH_SEGMENT_RECENT_RECORDS.format(segments_id=segments_id)
+        return self._request_business("GET", full_path, jwt=self._jwt())
+
+    def list_segment_notes(
+        self, segments_id: str, *, page_no: int = 1, page_size: int = 10, sort_type: int = 1
+    ) -> list[dict[str, Any]]:
+        """List comments on a segment."""
+        full_path = (
+            f"{ep.PATH_SEGMENT_NOTE_LIST}?segmentsId={segments_id}"
+            f"&pageNo={page_no}&pageSize={page_size}&sortType={sort_type}"
+        )
+        return _extract_rows(self._request_business("GET", full_path, jwt=self._jwt()))
+
+    def get_segment_my_notes(
+        self, segments_id: str, *, page_no: int = 1, page_size: int = 10
+    ) -> list[dict[str, Any]]:
+        """List my comments on a segment."""
+        full_path = (
+            f"{ep.PATH_SEGMENT_NOTE_MY}?segmentsId={segments_id}"
+            f"&pageNo={page_no}&pageSize={page_size}"
+        )
+        return _extract_rows(self._request_business("GET", full_path, jwt=self._jwt()))
+
+    def query_segments_map(
+        self,
+        max_lat: float,
+        max_lon: float,
+        min_lat: float,
+        min_lon: float,
+        *,
+        req_category: int = 1,
+        segments_type: int = -1,
+    ) -> dict[str, Any]:
+        """Query segments visible in a map bounding box."""
+        body = json.dumps(
+            {
+                "maxLat": max_lat,
+                "maxLon": max_lon,
+                "minLat": min_lat,
+                "minLon": min_lon,
+                "reqCategory": req_category,
+                "segmentsType": segments_type,
+            }
+        )
+        return self._request_business("POST", ep.PATH_SEGMENT_MAP, body=body, jwt=self._jwt())

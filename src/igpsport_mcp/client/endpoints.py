@@ -27,6 +27,20 @@ PATH_LOGIN = "/service/auth/account/login"
 PATH_QUERY_ACTIVITY = "/service/web-gateway/web-analyze/activity/queryMyActivity"
 PATH_DOWNLOAD_URL = "/service/web-gateway/web-analyze/activity/getDownloadUrl/{ride_id}"
 
+# Segment (赛段) endpoints — same signing + JWT auth.
+_SEG = "/service/web-gateway/segments4j"
+PATH_SEGMENT_MY_COLLECT = f"{_SEG}/segments/queryMyCollect"
+PATH_SEGMENT_MY_CREATE = f"{_SEG}/segments/queryMyCreate"
+PATH_SEGMENT_DETAIL = f"{_SEG}/segments/detail/{{segments_id}}"
+PATH_SEGMENT_OVERVIEW = f"{_SEG}/segments/queryOverView/{{segments_id}}"
+PATH_SEGMENT_SCORE_CHECK = f"{_SEG}/segments-score/check/{{segments_id}}"
+PATH_SEGMENT_RANK = f"{_SEG}/segments/rank"
+PATH_SEGMENT_TOP_RECORDS = f"{_SEG}/segments/topRecords/{{segments_id}}"
+PATH_SEGMENT_RECENT_RECORDS = f"{_SEG}/segments/recentRecords/{{segments_id}}"
+PATH_SEGMENT_NOTE_LIST = f"{_SEG}/segments-note/list"
+PATH_SEGMENT_NOTE_MY = f"{_SEG}/segments-note/myNote"
+PATH_SEGMENT_MAP = f"{_SEG}/segments/querySegmentsMap"
+
 
 def base_headers() -> dict[str, str]:
     """Headers sent on every request (signed or not)."""

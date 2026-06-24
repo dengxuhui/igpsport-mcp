@@ -28,7 +28,7 @@ LLM Client ──stdio(MCP)── igpsport-mcp ──HTTPS── iGPSport 私有
 
 server 内部分层(自上而下):
 
-1. **MCP Tool Layer**(`tools/`)——见下 8 个 tool。
+1. **MCP Tool Layer**(`tools/`)——见下 11 个 tool。
 2. **Analysis Layer**(`analysis/`)——派生指标服务端算好再返回。
 3. **FIT Parser**(`fit/parser.py`)——`fitparse` 封装。
 4. **Client**(`client/`)——登录 + token 缓存、活动列表、FIT 下载。
@@ -38,9 +38,13 @@ server 内部分层(自上而下):
 
 **数据流**:工具优先查 SQLite 缓存,miss 才打 API;FIT 文件本地永久缓存;同一活动的后续请求零 API 调用。
 
-## 8 个 MCP Tool
+## 11 个 MCP Tool
 
+### 活动类(8 个)
 `list_activities`、`get_activity_summary`(最高频,务必准且快)、`get_activity_streams`(强制降采样+通道选择)、`get_activity_laps`、`get_athlete_profile`、`get_athlete_stats`、`compare_activities`、`analyze_training_load`(CTL/ATL/TSB 趋势,杀手 query)。
+
+### 赛段类(3 个)
+`list_segments_collected`(我收藏的赛段)、`get_segment_detail`(赛段详情+我的PR+KOM+最快榜)、`get_segment_rank`(排行榜)。
 
 设计原则:输入参数极简;输出始终 compact JSON;返回 array 的工具都要有 `limit`;stream 类都要支持降采样;时间字段统一 ISO 8601 带时区,不用 unix timestamp。
 

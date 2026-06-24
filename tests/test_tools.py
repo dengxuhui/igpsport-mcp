@@ -12,10 +12,13 @@ EXPECTED_TOOLS = {
     "get_athlete_stats",
     "compare_activities",
     "analyze_training_load",
+    "list_segments_collected",
+    "get_segment_detail",
+    "get_segment_rank",
 }
 
 
-def test_all_eight_tools_registered():
+def test_all_tools_registered():
     server = build_server(load_config({}))
     names = {t.name for t in asyncio.run(server.list_tools())}
     assert names == EXPECTED_TOOLS

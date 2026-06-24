@@ -335,6 +335,76 @@ class IGPSportService:
         }
 
 
+    # -- segment tools -------------------------------------------------------
+
+    def list_segments_collected(
+        self, page_no: int = 1, page_size: int = 20
+    ) -> dict[str, Any]:
+        rows = self.client.list_segments_collected(page_no, page_size)
+        items = [norm.normalize_segment_row(r) for r in rows]
+        return {"segments": items, "page_no": page_no, "page_size": page_size}
+
+    def get_segment_detail(self, segments_id: str) -> dict[str, Any]:
+        # Fire all 3 detail-related requests in parallel (no asyncio — we'll
+        # sequence them, the overhead is trivial for a single segment).
+        detail = self.client.get_segment_detail(segments_id)
+        score = self.client.get_segment_score_check(segments_id)
+        top = self.client.get_segment_top_records(segments_id)
+
+        base = norm.normalize_segment_detail(detail)
+
+        # Personal record from score check.
+        base["my_record"] = None
+        if score and score.get("rideTotalTime"):
+            base["my_record"] = {
+                "time_s": score.get("rideTotalTime"),
+                "avg_speed_kmh": (
+                    round(score["avgSpeed"], 1) if score.get("avgSpeed") else None
+                ),
+                "finish_date": norm._iso_date(score.get("finishDate")),
+            }
+
+        # KOM from topRecords.
+        king = (top or {}).get("segmentsKing")
+        if king:
+            base["kom"] = {
+                "member_id": king.get("memberId"),
+                "nickname": king.get("nickName"),
+                "time_s": king.get("rideTotalTime"),
+            }
+
+        # Fastest times (top 5).
+        fastest = (top or {}).get("fastestTimeRanks") or []
+        base["fastest_times"] = [norm.normalize_rank_row(r) for r in fastest[:5]]
+
+        return base
+
+    def get_segment_rank(
+        self,
+        segments_id: str,
+        page_no: int = 1,
+        page_size: int = 30,
+        query_type: int = 1,
+    ) -> dict[str, Any]:
+        data = self.client.get_segment_rank(
+            segments_id, page_no=page_no, page_size=page_size, query_type=query_type
+        )
+        rank_list = (data or {}).get("rankList") or {}
+        personal = (data or {}).get("personalRank")
+
+        rows = rank_list.get("rows") or []
+        return {
+            "segments_id": segments_id,
+            "page_no": rank_list.get("pageNo", page_no),
+            "page_size": rank_list.get("pageSize", page_size),
+            "total_rows": rank_list.get("totalRows", 0),
+            "query_type": query_type,
+            "rankings": [norm.normalize_rank_row(r) for r in rows],
+            "personal_rank": norm.normalize_rank_row(personal) if personal else None,
+            "segment_name": None,  # caller can enrich
+        }
+
+
 def _r(value: Any, ndigits: int = 1) -> float | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
