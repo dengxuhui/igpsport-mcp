@@ -214,9 +214,7 @@ class IGPSportClient:
         full_path = f"{ep.PATH_SEGMENT_MY_COLLECT}?pageNo={page_no}&pageSize={page_size}"
         return _extract_rows(self._request_business("GET", full_path, jwt=self._jwt()))
 
-    def list_segments_created(
-        self, page_no: int = 1, page_size: int = 20
-    ) -> list[dict[str, Any]]:
+    def list_segments_created(self, page_no: int = 1, page_size: int = 20) -> list[dict[str, Any]]:
         """List segments the user has created."""
         full_path = f"{ep.PATH_SEGMENT_MY_CREATE}?pageNo={page_no}&pageSize={page_size}"
         return _extract_rows(self._request_business("GET", full_path, jwt=self._jwt()))

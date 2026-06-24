@@ -334,12 +334,9 @@ class IGPSportService:
             },
         }
 
-
     # -- segment tools -------------------------------------------------------
 
-    def list_segments_collected(
-        self, page_no: int = 1, page_size: int = 20
-    ) -> dict[str, Any]:
+    def list_segments_collected(self, page_no: int = 1, page_size: int = 20) -> dict[str, Any]:
         rows = self.client.list_segments_collected(page_no, page_size)
         items = [norm.normalize_segment_row(r) for r in rows]
         return {"segments": items, "page_no": page_no, "page_size": page_size}

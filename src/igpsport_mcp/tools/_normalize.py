@@ -113,9 +113,7 @@ def normalize_segment_detail(detail: dict[str, Any]) -> dict[str, Any]:
         "distance_m": detail.get("distance"),
         "total_ascent_m": detail.get("totalAscent"),
         "avg_grade_pct": (
-            round(detail["avgSlope"] * 100, 1)
-            if detail.get("avgSlope") is not None
-            else None
+            round(detail["avgSlope"] * 100, 1) if detail.get("avgSlope") is not None else None
         ),
         "min_alt_m": detail.get("minAlt"),
         "max_alt_m": detail.get("maxAlt"),
@@ -143,9 +141,7 @@ def normalize_rank_row(row: dict[str, Any]) -> dict[str, Any]:
         "speed_kmh": round(row["avgSpeed"], 1) if row.get("avgSpeed") is not None else None,
         "finish_date": _iso_date(row.get("finishDate")),
         "gender": (
-            "male" if row.get("gender") == 1
-            else "female" if row.get("gender") == 2
-            else None
+            "male" if row.get("gender") == 1 else "female" if row.get("gender") == 2 else None
         ),
     }
 
@@ -157,9 +153,7 @@ def normalize_segment_effort(row: dict[str, Any]) -> dict[str, Any]:
         "title": row.get("title"),
         "start_date": _iso_date(row.get("rideStartTime")),
         "time_s": row.get("rideTotalTime"),
-        "avg_speed_kmh": (
-            round(row["avgSpeed"], 1) if row.get("avgSpeed") is not None else None
-        ),
+        "avg_speed_kmh": (round(row["avgSpeed"], 1) if row.get("avgSpeed") is not None else None),
     }
 
 
