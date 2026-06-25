@@ -134,9 +134,7 @@ _METRICS_COLS = (
 
 def get_activity_metrics(conn: sqlite3.Connection, ride_id: str | int) -> dict[str, Any] | None:
     """Return cached derived metrics for *ride_id*, or None."""
-    cur = conn.execute(
-        "SELECT * FROM activity_metrics WHERE ride_id = ?", (str(ride_id),)
-    )
+    cur = conn.execute("SELECT * FROM activity_metrics WHERE ride_id = ?", (str(ride_id),))
     row = cur.fetchone()
     return dict(row) if row else None
 
@@ -176,4 +174,3 @@ def save_activity_metrics(
         # via list_activities first. Degrade gracefully — next call that
         # goes through list_activities will populate the FK.
         pass
-
