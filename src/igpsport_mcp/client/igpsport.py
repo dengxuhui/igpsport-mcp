@@ -14,7 +14,7 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _BACKOFF_BASE_S = 0.5
+
+# Header overrides that route a request through the iOS mobile signing gateway
+# (workout endpoints live under /service/mobile/api). See reverse-eng notes §5.1.
+_IOS_HDR: dict[str, str] = {
+    "x-access-key": ep.IOS_ACCESS_KEY,
+    "qiwu-app-version": ep.IOS_APP_VERSION,
+}
 
 
 def _extract_rows(data: Any) -> list[dict[str, Any]]:
@@ -51,10 +58,12 @@ class IGPSportClient:
     ) -> None:
         self._config = config
         self._http = http or httpx.Client(base_url=ep.API_BASE, timeout=30.0)
-        self._signer = signer or WasmSigner()
         self._tokens = TokenStore(config.token_path)
-        self._session_ready = False
         self._token: Token | None = None
+        # One armed signer per access-key (web vs iOS).
+        self._signers: dict[str, WasmSigner] = {}
+        if signer is not None:
+            self._signers[ep.ACCESS_KEY] = signer
 
     def close(self) -> None:
         self._http.close()
@@ -67,21 +76,35 @@ class IGPSportClient:
 
     # -- signing session ---------------------------------------------------
 
-    def _ensure_session(self) -> None:
-        """Fetch a fresh secret_key and arm the WASM signer (idempotent-ish)."""
-        if self._session_ready:
-            return
-        data = self._request_raw("GET", ep.PATH_PUBLIC_KEY, signed=False)
-        secret_key = data["data"]["secret_key"]
-        self._signer.init_session_key(secret_key)
-        self._session_ready = True
+    def _get_signer(self, access_key: str) -> WasmSigner:
+        """Return an armed signer for *access_key* (lazy + cached).
 
-    def _signed_headers(self, method: str, full_path: str, body: str, jwt: str | None) -> dict:
-        self._ensure_session()
+        Each access-key (``AKIDWebClient`` / ``AKIDiOSApp2``) gets its own
+        ``/public/key`` handshake so the secret_key matches the key-id in the
+        request header.
+        """
+        if access_key in self._signers:
+            return self._signers[access_key]
+
+        signer = WasmSigner()
+        # Per reverse-eng notes §5.1: iOS endpoints only swap x-access-key +
+        # qiwu-app-version; everything else (incl. x-platform) is identical.
+        overrides = _IOS_HDR if access_key == ep.IOS_ACCESS_KEY else {}
+        data = self._request_raw("GET", ep.PATH_PUBLIC_KEY, signed=False, **overrides)
+        secret_key = data["data"]["secret_key"]
+        signer.init_session_key(secret_key)
+        self._signers[access_key] = signer
+        return signer
+
+    def _signed_headers(
+        self, method: str, full_path: str, body: str, jwt: str | None, **hdr_overrides: str
+    ) -> dict:
+        access_key = hdr_overrides.get("x-access-key", ep.ACCESS_KEY)
+        signer = self._get_signer(access_key)
         timestamp = str(int(time.time()))
         nonce = str(uuid.uuid4())
-        signature = self._signer.generate_signature(method, full_path, timestamp, nonce, body)
-        headers = ep.base_headers()
+        signature = signer.generate_signature(method, full_path, timestamp, nonce, body)
+        headers = ep.base_headers(**hdr_overrides)
         headers.update({"x-timestamp": timestamp, "x-nonce": nonce, "x-signature": signature})
         if jwt:
             headers["authorization"] = f"Bearer {jwt}"
@@ -113,12 +136,13 @@ class IGPSportClient:
         body: str | None = None,
         jwt: str | None = None,
         signed: bool = True,
+        **hdr_overrides: str,
     ) -> dict[str, Any]:
         body_str = body or ""
         if signed:
-            headers = self._signed_headers(method, full_path, body_str, jwt)
+            headers = self._signed_headers(method, full_path, body_str, jwt, **hdr_overrides)
         else:
-            headers = ep.base_headers()
+            headers = ep.base_headers(**hdr_overrides)
         request = self._http.build_request(
             method,
             full_path,
@@ -133,9 +157,15 @@ class IGPSportClient:
         return payload
 
     def _request_business(
-        self, method: str, full_path: str, *, body: str | None = None, jwt: str | None = None
+        self,
+        method: str,
+        full_path: str,
+        *,
+        body: str | None = None,
+        jwt: str | None = None,
+        **hdr_overrides: str,
     ) -> Any:
-        payload = self._request_raw(method, full_path, body=body, jwt=jwt)
+        payload = self._request_raw(method, full_path, body=body, jwt=jwt, **hdr_overrides)
         if payload.get("code") != 0:
             raise IGPSportAPIChangedError(
                 f"{full_path} returned code={payload.get('code')} "
@@ -320,3 +350,43 @@ class IGPSportClient:
             }
         )
         return self._request_business("POST", ep.PATH_SEGMENT_MAP, body=body, jwt=self._jwt())
+
+    # -- workout (训练课程) endpoints (mobile API) -------------------------
+
+    # WorkOut endpoints were *captured* from the iOS App, but the server accepts
+    # the default web access-key for them (same JWT). Web key is the verified
+    # working config — do NOT switch to ``_IOS_HDR`` (breaks the upload).
+    # ``_IOS_HDR`` / the iOS signer branch are kept as a fallback only.
+    _WO_HDR: ClassVar[dict[str, str]] = {}
+
+    def create_workout(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Create or update a custom workout. Returns ``{workoutId: int}``."""
+        body = json.dumps({"data": data}, ensure_ascii=False)
+        return self._request_business(
+            "POST",
+            ep.PATH_WORKOUT_CREATE,
+            body=body,
+            jwt=self._jwt(),
+            **self._WO_HDR,
+        )
+
+    def get_workout_detail(self, workout_id: int) -> dict[str, Any]:
+        """Get full detail (including structure) of a workout."""
+        full_path = f"{ep.PATH_WORKOUT_DETAIL}?id={workout_id}"
+        return self._request_business(
+            "GET",
+            full_path,
+            jwt=self._jwt(),
+            **self._WO_HDR,
+        )
+
+    def delete_workout(self, workout_id: int) -> None:
+        """Delete a custom workout."""
+        full_path = f"{ep.PATH_WORKOUT_DELETE}?id={workout_id}"
+        self._request_business(
+            "POST",
+            full_path,
+            body="{}",
+            jwt=self._jwt(),
+            **self._WO_HDR,
+        )

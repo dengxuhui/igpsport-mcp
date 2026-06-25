@@ -16,6 +16,10 @@ EXPECTED_TOOLS = {
     "list_segments_collected",
     "get_segment_detail",
     "get_segment_rank",
+    "create_workout",
+    "list_workouts",
+    "get_workout_detail",
+    "delete_workout",
 }
 
 
@@ -23,6 +27,80 @@ def test_all_tools_registered():
     server = build_server(load_config({}))
     names = {t.name for t in asyncio.run(server.list_tools())}
     assert names == EXPECTED_TOOLS
+
+
+class _StubWorkoutClient:
+    """Records server-side workout calls without touching the network."""
+
+    def __init__(self) -> None:
+        self.created: dict | None = None
+        self.deleted: list[int] = []
+
+    def create_workout(self, data: dict) -> dict:
+        self.created = data
+        return {"workoutId": 4242}
+
+    def delete_workout(self, workout_id: int) -> None:
+        self.deleted.append(workout_id)
+
+
+def _workout_service(tmp_path):
+    from igpsport_mcp.storage import db as db_mod
+    from igpsport_mcp.tools._service import IGPSportService
+
+    conn = db_mod.connect(tmp_path / "wo.db")
+    client = _StubWorkoutClient()
+    service = IGPSportService(load_config({"IGPSPORT_FTP": "250"}), client=client, db_conn=conn)
+    return service, client
+
+
+_SIMPLE_IR = {
+    "title": "2x20 SST",
+    "steps": [
+        {
+            "name": "Warmup",
+            "intensity": "warmup",
+            "duration": {"type": "time", "value": 600},
+        }
+    ],
+}
+
+
+def test_create_workout_dry_run_does_not_send(tmp_path):
+    service, client = _workout_service(tmp_path)
+    out = service.create_workout(_SIMPLE_IR, dry_run=True)
+    assert out["success"] and out["dry_run"]
+    assert client.created is None  # nothing sent
+    assert service.list_workouts()["total"] == 0
+
+
+def test_create_workout_invalid_ir_returns_errors(tmp_path):
+    service, client = _workout_service(tmp_path)
+    out = service.create_workout({"title": "", "steps": []}, dry_run=True)
+    assert out["success"] is False and out["errors"]
+    assert client.created is None
+
+
+def test_create_then_delete_workout_with_confirmation(tmp_path):
+    service, client = _workout_service(tmp_path)
+
+    created = service.create_workout(_SIMPLE_IR)
+    assert created == {"success": True, "workout_id": 4242}
+    assert client.created is not None
+    assert service.list_workouts()["total"] == 1
+
+    # Without confirm: preview only, nothing deleted.
+    preview = service.delete_workout(4242)
+    assert preview["requires_confirmation"] is True
+    assert preview["title"] == "2x20 SST"
+    assert client.deleted == []
+    assert service.list_workouts()["total"] == 1
+
+    # With confirm: server + local cache cleared.
+    done = service.delete_workout(4242, confirm=True)
+    assert done["success"] is True and done["was_cached"] is True
+    assert client.deleted == [4242]
+    assert service.list_workouts()["total"] == 0
 
 
 def test_call_tool_through_server_network_free(monkeypatch):

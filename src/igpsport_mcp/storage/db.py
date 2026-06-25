@@ -97,3 +97,61 @@ def set_fit_path(conn: sqlite3.Connection, ride_id: str | int, fit_path: Path) -
         (str(fit_path), str(ride_id)),
     )
     conn.commit()
+
+
+# -- workout CRUD -----------------------------------------------------------
+
+_WO_COLS = (
+    "workout_id",
+    "title",
+    "description",
+    "total_time_s",
+    "ir_json",
+    "api_json",
+    "created_at",
+)
+
+
+def save_workout(
+    conn: sqlite3.Connection, workout_id: int, ir: dict[str, Any], api: dict[str, Any]
+) -> None:
+    """Record a successfully created workout."""
+    row = {
+        "workout_id": workout_id,
+        "title": ir.get("title", ""),
+        "description": ir.get("description", ""),
+        "total_time_s": api.get("totalTime", 0),
+        "ir_json": json.dumps(ir, ensure_ascii=False),
+        "api_json": json.dumps(api, ensure_ascii=False),
+        "created_at": _now_iso(),
+    }
+    placeholders = ", ".join(f":{c}" for c in _WO_COLS)
+    conn.execute(
+        f"INSERT OR REPLACE INTO workouts ({', '.join(_WO_COLS)}) VALUES ({placeholders})",
+        row,
+    )
+    conn.commit()
+
+
+def list_workouts(conn: sqlite3.Connection, limit: int = 50) -> list[dict[str, Any]]:
+    """List recently created workouts (newest first)."""
+    cur = conn.execute(
+        "SELECT workout_id, title, description, total_time_s, created_at FROM workouts "
+        "ORDER BY created_at DESC LIMIT ?",
+        (limit,),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+def get_workout(conn: sqlite3.Connection, workout_id: int) -> dict[str, Any] | None:
+    """Return full stored workout row or None."""
+    cur = conn.execute("SELECT * FROM workouts WHERE workout_id = ?", (workout_id,))
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def delete_workout(conn: sqlite3.Connection, workout_id: int) -> bool:
+    """Remove a workout from local storage. Returns True if it existed."""
+    cur = conn.execute("DELETE FROM workouts WHERE workout_id = ?", (workout_id,))
+    conn.commit()
+    return cur.rowcount > 0

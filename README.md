@@ -1,6 +1,6 @@
 # igpsport-mcp
 
-把 **iGPSport 骑行数据**接入 Claude 等 LLM 客户端的本地 [MCP](https://modelcontextprotocol.io) server。用自然语言分析你的训练:_"我这周训练负荷怎么样?"_ _"对比一下上周和这周的两次长距离骑行。"_ _"我收藏的爬坡赛段排名怎样?"_ _"今年骑了多少公里,有哪些个人最佳?"_
+把 **iGPSport 骑行数据**接入 Claude 等 LLM 客户端的本地 [MCP](https://modelcontextprotocol.io) server。用自然语言分析你的训练:_"我这周训练负荷怎么样?"_ _"对比一下上周和这周的两次长距离骑行。"_ _"我收藏的爬坡赛段排名怎样?"_ _"今年骑了多少公里,有哪些个人最佳?"_ ——还能反过来**让 Claude 给你开课**:_"按我的 FTP 编一节 2×20 SST,推到我的码表 App。"_
 
 **差异化**:NP / IF / TSS / CTL / ATL / TSB 这些派生训练指标在 **MCP 层算好**再返回——LLM 拿到的是可直接讲故事的数字,而不是一堆原始 stream。
 
@@ -73,7 +73,7 @@ claude mcp add igpsport --scope user \
 
 > **连不上 / 找不到命令?** 多半是 `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `"uvx"` / `command` 换成 `which uvx` 输出的**绝对路径**(如 `/Users/你/.local/bin/uvx`)即可。
 
-## 提供的 12 个工具
+## 提供的 16 个工具
 
 **活动与训练(8)**
 
@@ -102,6 +102,17 @@ claude mcp add igpsport --scope user \
 |---|---|
 | `get_member_statistics` | 官方年度统计与个人最佳:总里程/时长/卡路里/TSS、逐月里程、距离里程碑、各项 PR(最远/最久/最快/最大功率/最大爬升) |
 
+**训练课程(4)** — 唯一的「写回」能力
+
+| 工具 | 用途 |
+|---|---|
+| `create_workout` | 用自然语言描述结构化训练课(热身/主课/间歇/恢复),编译成 iGPSport 原生格式并推到你的码表 App;支持 `dry_run=true` 先预览不发送 |
+| `list_workouts` | 列出经本工具创建的课程(本地维护,iGPSport 无服务端列表接口) |
+| `get_workout_detail` | 拉取某节课程的完整结构 |
+| `delete_workout` | 删除课程。**破坏性、不可恢复**:默认只返回确认预览,需再带 `confirm=true` 才真正删除 |
+
+> 功率目标支持绝对瓦数、%FTP(用你的 FTP 自动换算)、功率区间;也支持心率、踏频、速度目标。时长可按时间/距离/卡路里/手动按圈。课程创建后会出现在 iGPSport App 的「训练课程」里,可同步到码表执行。
+
 ## 派生指标说明
 
 - **NP**(标准化功率):`((30s 滑动均值)^4 的均值)^0.25`,计算前 stream 重采样到 1Hz。
@@ -116,7 +127,10 @@ claude mcp add igpsport --scope user \
 A:不必。没功率计时心率相关指标照常,TSS 走 hrTSS 兜底(精度较低,会标注)。但建议填 FTP 以解锁功率指标。
 
 **Q:数据会上传到哪里吗?**
-A:不会。除了向 iGPSport 拉你自己的数据,一切都在本地;FIT 文件与派生指标缓存在本地。
+A:不会有第三方。除了向 iGPSport 读写**你自己账号**的数据(读活动/统计,以及 `create_workout`/`delete_workout` 时写你自己的训练课程),一切都在本地;FIT 文件与派生指标缓存在本地。
+
+**Q:`create_workout` / `delete_workout` 会乱动我的数据吗?**
+A:`create_workout` 只新增训练课程,可先 `dry_run=true` 预览编译结果再决定是否发送。`delete_workout` 是不可恢复操作,默认只返回确认预览,必须显式 `confirm=true` 才真正删除——所以 LLM 不会在你没确认时删掉课程。
 
 **Q:接口失效了怎么办?**
 A:iGPSport 改版可能导致失效,工具会抛出明确错误。欢迎到 [Issues](https://github.com/dengxuhui/igpsport-mcp/issues) 反馈。

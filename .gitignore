@@ -29,3 +29,6 @@ htmlcov/
 
 # OS / 编辑器
 .DS_Store
+
+# idea
+.idea/

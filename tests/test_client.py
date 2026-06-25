@@ -31,16 +31,7 @@ def make_client(tmp_path, http):
     return IGPSportClient(cfg, http=http, signer=StubSigner())
 
 
-def _key_response(httpx_mock):
-    httpx_mock.add_response(
-        url=ep.API_BASE + ep.PATH_PUBLIC_KEY,
-        method="GET",
-        json={"code": 0, "data": {"secret_key": "AAAA"}},
-    )
-
-
 def test_login_success(tmp_path, httpx_mock):
-    _key_response(httpx_mock)
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",
@@ -57,7 +48,6 @@ def test_login_success(tmp_path, httpx_mock):
 
 
 def test_login_bad_credentials_raises(tmp_path, httpx_mock):
-    _key_response(httpx_mock)
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",
@@ -69,7 +59,6 @@ def test_login_bad_credentials_raises(tmp_path, httpx_mock):
 
 
 def test_list_activities_parses_rows(tmp_path, httpx_mock):
-    _key_response(httpx_mock)
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",
@@ -89,7 +78,6 @@ def test_list_activities_parses_rows(tmp_path, httpx_mock):
 
 
 def test_download_fit_two_step(tmp_path, httpx_mock):
-    _key_response(httpx_mock)
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",
@@ -115,7 +103,6 @@ def test_download_fit_two_step(tmp_path, httpx_mock):
 
 
 def test_business_error_raises_api_changed(tmp_path, httpx_mock):
-    _key_response(httpx_mock)
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",

@@ -434,6 +434,80 @@ class IGPSportService:
 
         return base
 
+    # -- workout tools -------------------------------------------------------
+
+    def create_workout(
+        self, workout_ir: dict[str, Any], *, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Validate + compile IR, POST to iGPSport, record in local storage.
+
+        ``dry_run=True`` returns the compiled API body without sending it.
+        """
+        from ..workout.ir import compile_workout, validate_workout_ir
+
+        errors = validate_workout_ir(workout_ir)
+        if errors:
+            return {"success": False, "errors": errors}
+
+        compiled = compile_workout(workout_ir, ftp=self._ftp)
+        if dry_run:
+            return {"success": True, "dry_run": True, "compiled": compiled}
+
+        result = self.client.create_workout(compiled)
+        workout_id = result["workoutId"]
+        from ..storage import db as db_mod
+
+        db_mod.save_workout(self.db, workout_id, workout_ir, compiled)
+        return {"success": True, "workout_id": workout_id}
+
+    def list_workouts(self, limit: int = 20) -> dict[str, Any]:
+        """List created workouts from local cache (newest first)."""
+        from ..storage import db as db_mod
+
+        rows = db_mod.list_workouts(self.db, limit=min(limit, 50))
+        return {"workouts": rows, "total": len(rows)}
+
+    def get_workout_detail(self, workout_id: int) -> dict[str, Any]:
+        """Fetch full workout detail from iGPSport server."""
+        return self.client.get_workout_detail(int(workout_id))
+
+    def delete_workout(self, workout_id: int, *, confirm: bool = False) -> dict[str, Any]:
+        """Delete a custom workout from both server and local cache.
+
+        Destructive and irreversible on the iGPSport side. Requires
+        ``confirm=True``; otherwise returns a preview asking for confirmation.
+        """
+        wid = int(workout_id)
+        from ..storage import db as db_mod
+
+        if not confirm:
+            cached = db_mod.get_workout(self.db, wid)
+            return {
+                "success": False,
+                "requires_confirmation": True,
+                "workout_id": wid,
+                "title": cached.get("title") if cached else None,
+                "message": (
+                    "This permanently deletes the workout on iGPSport and cannot "
+                    "be undone. Re-call delete_workout with confirm=true to proceed."
+                ),
+            }
+
+        server_ok = True
+        try:
+            self.client.delete_workout(wid)
+        except Exception as exc:
+            logger.warning("Server delete for workout %d failed: %s", wid, exc)
+            server_ok = False
+
+        existed = db_mod.delete_workout(self.db, wid)
+        return {
+            "success": server_ok,
+            "workout_id": wid,
+            "was_cached": existed,
+            "note": "Local record cleaned" if existed and not server_ok else None,
+        }
+
     def get_segment_rank(
         self,
         segments_id: str,

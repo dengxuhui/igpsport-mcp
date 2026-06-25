@@ -38,3 +38,15 @@ CREATE TABLE IF NOT EXISTS athlete_profile (
     profile_json TEXT NOT NULL,
     fetched_at   TEXT NOT NULL
 );
+
+-- Workouts created via MCP (keeps a local ID list so list_workouts works
+-- without a server-side list endpoint).
+CREATE TABLE IF NOT EXISTS workouts (
+    workout_id    INTEGER PRIMARY KEY,
+    title         TEXT NOT NULL,
+    description   TEXT,
+    total_time_s  INTEGER,
+    ir_json       TEXT NOT NULL,    -- original LLM-facing IR
+    api_json      TEXT NOT NULL,    -- compiled iGPSport request body
+    created_at    TEXT NOT NULL
+);

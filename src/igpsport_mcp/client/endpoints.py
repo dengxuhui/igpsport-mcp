@@ -33,6 +33,16 @@ PATH_MEMBER_STATISTICS = "/service/sportg/sporth/memberRecordPlus/getMemberDataS
 # Athlete training params (FTP/LTHR/maxHR/weight + configured zones).
 PATH_USER_INTERVAL_INFO = "/service/mobile/api/v2/User/UserIntervalInfo"
 
+# iOS App constants (mobile API, same signing gateway as web).
+IOS_ACCESS_KEY = "AKIDiOSApp2"
+IOS_APP_VERSION = "8.07.18"
+
+# Workout (训练课程) endpoints — mobile API, use iOS constants + JWT auth.
+_WO = "/service/mobile/api/WorkOut"
+PATH_WORKOUT_CREATE = f"{_WO}/EditCustomWorkOut"
+PATH_WORKOUT_DETAIL = f"{_WO}/GetWorkOutDetail"
+PATH_WORKOUT_DELETE = f"{_WO}/CustomWorkOutDel"
+
 # Segment (赛段) endpoints — same signing + JWT auth.
 _SEG = "/service/web-gateway/segments4j"
 PATH_SEGMENT_MY_COLLECT = f"{_SEG}/segments/queryMyCollect"
@@ -48,9 +58,13 @@ PATH_SEGMENT_NOTE_MY = f"{_SEG}/segments-note/myNote"
 PATH_SEGMENT_MAP = f"{_SEG}/segments/querySegmentsMap"
 
 
-def base_headers() -> dict[str, str]:
-    """Headers sent on every request (signed or not)."""
-    return {
+def base_headers(**overrides: str) -> dict[str, str]:
+    """Headers sent on every request (signed or not).
+
+    ``overrides`` let callers swap platform-specific fields (e.g. the iOS
+    ``x-access-key`` / ``qiwu-app-version``) without duplicating logic.
+    """
+    headers = {
         "accept": "application/json, text/plain, */*",
         "qiwu-app-version": APP_VERSION,
         "timezone": TIMEZONE,
@@ -59,3 +73,5 @@ def base_headers() -> dict[str, str]:
         "origin": ORIGIN,
         "referer": REFERER,
     }
+    headers.update(overrides)
+    return headers
