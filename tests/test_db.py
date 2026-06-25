@@ -60,3 +60,31 @@ def test_set_fit_path(tmp_path):
     db.upsert_activity(conn, {"ride_id": 9, "start_time": "2026-01-01"})
     db.set_fit_path(conn, 9, tmp_path / "fit" / "9.fit")
     assert db.get_activity(conn, 9)["fit_path"].endswith("9.fit")
+
+
+def test_metrics_cache_save_and_load(tmp_path):
+    conn = _conn(tmp_path)
+    summary = {
+        "summary": {
+            "normalized_power_w": 210.5,
+            "intensity_factor": 0.842,
+            "tss": 120.3,
+            "work_kj": 1100.0,
+            "max_power_w": 800,
+            "max_hr_bpm": 175,
+            "avg_cadence_rpm": 85.2,
+        },
+        "hr_zones_s": {"z1": 100, "z2": 200},
+    }
+    # Without FK on activities, this should still work.
+    db.save_activity_metrics(conn, "999", summary)
+    cached = db.get_activity_metrics(conn, "999")
+    assert cached is not None
+    assert cached["normalized_power_w"] == 210.5
+    assert cached["tss"] == 120.3
+    assert "hr_zones_s" in cached["metrics_json"]
+
+
+def test_metrics_cache_miss(tmp_path):
+    conn = _conn(tmp_path)
+    assert db.get_activity_metrics(conn, "nonexistent") is None

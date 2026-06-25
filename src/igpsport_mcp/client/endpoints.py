@@ -39,6 +39,7 @@ IOS_APP_VERSION = "8.07.18"
 
 # Workout (训练课程) endpoints — mobile API, use iOS constants + JWT auth.
 _WO = "/service/mobile/api/WorkOut"
+PATH_WORKOUT_LIST = f"{_WO}/GetWorkOutList"
 PATH_WORKOUT_CREATE = f"{_WO}/EditCustomWorkOut"
 PATH_WORKOUT_DETAIL = f"{_WO}/GetWorkOutDetail"
 PATH_WORKOUT_DELETE = f"{_WO}/CustomWorkOutDel"

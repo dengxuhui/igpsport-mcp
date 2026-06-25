@@ -25,9 +25,9 @@ def register(server: FastMCP, service: IGPSportService) -> None:
         return service.create_workout(workout_ir, dry_run=dry_run)
 
     @server.tool()
-    def list_workouts(limit: int = 20) -> dict[str, Any]:
-        """List locally stored custom workouts (newest first)."""
-        return service.list_workouts(limit)
+    def list_workouts() -> dict[str, Any]:
+        """List all custom workouts from iGPSport server (live, not cached)."""
+        return service.list_workouts()
 
     @server.tool()
     def get_workout_detail(workout_id: int) -> dict[str, Any]:
@@ -36,7 +36,7 @@ def register(server: FastMCP, service: IGPSportService) -> None:
 
     @server.tool()
     def delete_workout(workout_id: int, *, confirm: bool = False) -> dict[str, Any]:
-        """Delete a custom workout from both iGPSport server and local cache.
+        """Delete a custom workout from the iGPSport server.
 
         Destructive and irreversible. Defaults to a dry preview that asks for
         confirmation; pass ``confirm=True`` to actually delete.

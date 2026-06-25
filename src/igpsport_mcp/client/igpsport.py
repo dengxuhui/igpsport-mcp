@@ -359,6 +359,22 @@ class IGPSportClient:
     # ``_IOS_HDR`` / the iOS signer branch are kept as a fallback only.
     _WO_HDR: ClassVar[dict[str, str]] = {}
 
+    def list_workouts(self) -> list[dict[str, Any]]:
+        """List all custom workouts belonging to the user.
+
+        The server returns a flat array (pagination is ignored — all items
+        come back in one response). Each item has ``id``, ``title``,
+        ``totalTime``, ``img``, ``grade``.
+        """
+        full_path = f"{ep.PATH_WORKOUT_LIST}?pageNo=1&pageSize=200"
+        result = self._request_business(
+            "GET",
+            full_path,
+            jwt=self._jwt(),
+            **self._WO_HDR,
+        )
+        return list(result) if isinstance(result, list) else []
+
     def create_workout(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create or update a custom workout. Returns ``{workoutId: int}``."""
         body = json.dumps({"data": data}, ensure_ascii=False)

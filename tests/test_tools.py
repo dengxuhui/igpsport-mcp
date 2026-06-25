@@ -35,13 +35,28 @@ class _StubWorkoutClient:
     def __init__(self) -> None:
         self.created: dict | None = None
         self.deleted: list[int] = []
+        self._workouts: dict[int, dict] = {
+            4242: {"title": "2x20 SST", "totalTime": 3600},
+        }
+
+    def list_workouts(self) -> list[dict]:
+        return [
+            {"id": wid, "title": w["title"], "totalTime": w["totalTime"], "img": "", "grade": 0}
+            for wid, w in self._workouts.items()
+        ]
 
     def create_workout(self, data: dict) -> dict:
         self.created = data
-        return {"workoutId": 4242}
+        wid = 4242
+        self._workouts[wid] = {"title": "2x20 SST", "totalTime": 3600}
+        return {"workoutId": wid}
+
+    def get_workout_detail(self, workout_id: int) -> dict:
+        return self._workouts.get(workout_id, {})
 
     def delete_workout(self, workout_id: int) -> None:
         self.deleted.append(workout_id)
+        self._workouts.pop(workout_id, None)
 
 
 def _workout_service(tmp_path):
@@ -71,7 +86,6 @@ def test_create_workout_dry_run_does_not_send(tmp_path):
     out = service.create_workout(_SIMPLE_IR, dry_run=True)
     assert out["success"] and out["dry_run"]
     assert client.created is None  # nothing sent
-    assert service.list_workouts()["total"] == 0
 
 
 def test_create_workout_invalid_ir_returns_errors(tmp_path):
@@ -81,26 +95,31 @@ def test_create_workout_invalid_ir_returns_errors(tmp_path):
     assert client.created is None
 
 
+def test_list_workouts_from_server(tmp_path):
+    service, _ = _workout_service(tmp_path)
+    result = service.list_workouts()
+    assert result["total"] == 1
+    assert result["workouts"][0]["workout_id"] == 4242
+    assert result["workouts"][0]["title"] == "2x20 SST"
+
+
 def test_create_then_delete_workout_with_confirmation(tmp_path):
     service, client = _workout_service(tmp_path)
 
     created = service.create_workout(_SIMPLE_IR)
     assert created == {"success": True, "workout_id": 4242}
     assert client.created is not None
-    assert service.list_workouts()["total"] == 1
 
     # Without confirm: preview only, nothing deleted.
     preview = service.delete_workout(4242)
     assert preview["requires_confirmation"] is True
     assert preview["title"] == "2x20 SST"
     assert client.deleted == []
-    assert service.list_workouts()["total"] == 1
 
-    # With confirm: server + local cache cleared.
+    # With confirm: server delete succeeds.
     done = service.delete_workout(4242, confirm=True)
-    assert done["success"] is True and done["was_cached"] is True
+    assert done["success"] is True
     assert client.deleted == [4242]
-    assert service.list_workouts()["total"] == 0
 
 
 def test_call_tool_through_server_network_free(monkeypatch):

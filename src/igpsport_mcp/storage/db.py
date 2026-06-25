@@ -71,8 +71,25 @@ def upsert_activity(conn: sqlite3.Connection, activity: dict[str, Any]) -> None:
 
 
 def upsert_activities(conn: sqlite3.Connection, activities: list[dict[str, Any]]) -> None:
+    if not activities:
+        return
+    rows = []
     for activity in activities:
-        upsert_activity(conn, activity)
+        row = {col: activity.get(col) for col in _ACTIVITY_COLUMNS}
+        row["ride_id"] = str(row["ride_id"])
+        if isinstance(row["raw_json"], (dict, list)):
+            row["raw_json"] = json.dumps(row["raw_json"], ensure_ascii=False)
+        row["fetched_at"] = row["fetched_at"] or _now_iso()
+        rows.append(row)
+
+    placeholders = ", ".join(f":{c}" for c in _ACTIVITY_COLUMNS)
+    updates = ", ".join(f"{c}=excluded.{c}" for c in _ACTIVITY_COLUMNS if c != "ride_id")
+    conn.executemany(
+        f"INSERT INTO activities ({', '.join(_ACTIVITY_COLUMNS)}) VALUES ({placeholders}) "
+        f"ON CONFLICT(ride_id) DO UPDATE SET {updates}",
+        rows,
+    )
+    conn.commit()
 
 
 def get_activity(conn: sqlite3.Connection, ride_id: str | int) -> dict[str, Any] | None:
@@ -99,59 +116,64 @@ def set_fit_path(conn: sqlite3.Connection, ride_id: str | int, fit_path: Path) -
     conn.commit()
 
 
-# -- workout CRUD -----------------------------------------------------------
+# -- derived metrics cache ---------------------------------------------------
 
-_WO_COLS = (
-    "workout_id",
-    "title",
-    "description",
-    "total_time_s",
-    "ir_json",
-    "api_json",
-    "created_at",
+_METRICS_COLS = (
+    "ride_id",
+    "normalized_power_w",
+    "intensity_factor",
+    "tss",
+    "work_kj",
+    "max_power_w",
+    "max_hr_bpm",
+    "avg_cadence_rpm",
+    "metrics_json",
+    "computed_at",
 )
 
 
-def save_workout(
-    conn: sqlite3.Connection, workout_id: int, ir: dict[str, Any], api: dict[str, Any]
-) -> None:
-    """Record a successfully created workout."""
-    row = {
-        "workout_id": workout_id,
-        "title": ir.get("title", ""),
-        "description": ir.get("description", ""),
-        "total_time_s": api.get("totalTime", 0),
-        "ir_json": json.dumps(ir, ensure_ascii=False),
-        "api_json": json.dumps(api, ensure_ascii=False),
-        "created_at": _now_iso(),
-    }
-    placeholders = ", ".join(f":{c}" for c in _WO_COLS)
-    conn.execute(
-        f"INSERT OR REPLACE INTO workouts ({', '.join(_WO_COLS)}) VALUES ({placeholders})",
-        row,
-    )
-    conn.commit()
-
-
-def list_workouts(conn: sqlite3.Connection, limit: int = 50) -> list[dict[str, Any]]:
-    """List recently created workouts (newest first)."""
+def get_activity_metrics(conn: sqlite3.Connection, ride_id: str | int) -> dict[str, Any] | None:
+    """Return cached derived metrics for *ride_id*, or None."""
     cur = conn.execute(
-        "SELECT workout_id, title, description, total_time_s, created_at FROM workouts "
-        "ORDER BY created_at DESC LIMIT ?",
-        (limit,),
+        "SELECT * FROM activity_metrics WHERE ride_id = ?", (str(ride_id),)
     )
-    return [dict(row) for row in cur.fetchall()]
-
-
-def get_workout(conn: sqlite3.Connection, workout_id: int) -> dict[str, Any] | None:
-    """Return full stored workout row or None."""
-    cur = conn.execute("SELECT * FROM workouts WHERE workout_id = ?", (workout_id,))
     row = cur.fetchone()
     return dict(row) if row else None
 
 
-def delete_workout(conn: sqlite3.Connection, workout_id: int) -> bool:
-    """Remove a workout from local storage. Returns True if it existed."""
-    cur = conn.execute("DELETE FROM workouts WHERE workout_id = ?", (workout_id,))
-    conn.commit()
-    return cur.rowcount > 0
+def save_activity_metrics(
+    conn: sqlite3.Connection, ride_id: str | int, summary: dict[str, Any]
+) -> None:
+    """Persist computed summary block for a ride.
+
+    Gracefully handles legacy DBs with a FK constraint on ``ride_id`` — the
+    in-memory cache still works, we just skip the SQLite write.
+    """
+    s = summary.get("summary") or summary
+    row = {
+        "ride_id": str(ride_id),
+        "normalized_power_w": s.get("normalized_power_w"),
+        "intensity_factor": s.get("intensity_factor"),
+        "tss": s.get("tss"),
+        "work_kj": s.get("work_kj"),
+        "max_power_w": s.get("max_power_w"),
+        "max_hr_bpm": s.get("max_hr_bpm"),
+        "avg_cadence_rpm": s.get("avg_cadence_rpm"),
+        "metrics_json": json.dumps(summary, ensure_ascii=False),
+        "computed_at": _now_iso(),
+    }
+    placeholders = ", ".join(f":{c}" for c in _METRICS_COLS)
+    updates = ", ".join(f"{c}=excluded.{c}" for c in _METRICS_COLS if c != "ride_id")
+    try:
+        conn.execute(
+            f"INSERT INTO activity_metrics ({', '.join(_METRICS_COLS)}) VALUES ({placeholders}) "
+            f"ON CONFLICT(ride_id) DO UPDATE SET {updates}",
+            row,
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # Legacy DB with FK on activities.ride_id and the row wasn't cached
+        # via list_activities first. Degrade gracefully — next call that
+        # goes through list_activities will populate the FK.
+        pass
+

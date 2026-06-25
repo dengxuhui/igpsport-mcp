@@ -54,7 +54,7 @@ server 内部分层(自上而下):
 `get_member_statistics`(官方年度统计 + 个人最佳)。
 
 ### 训练课程类(4 个,唯一写入路径)
-`create_workout`(IR → 推到 App,带 `dry_run` 预览)、`list_workouts`(本地缓存的课程列表,因为服务端无 REST 列表接口)、`get_workout_detail`、`delete_workout`(破坏性,需 `confirm=True`,默认只返回预览)。
+`create_workout`(IR → 推到 App,带 `dry_run` 预览)、`list_workouts`(从服务端实时拉取,非本地缓存)、`get_workout_detail`、`delete_workout`(破坏性,需 `confirm=True`,默认只返回预览)。
 
 设计原则:输入参数极简;输出始终 compact JSON;返回 array 的工具都要有 `limit`;stream 类都要支持降采样;时间字段统一 ISO 8601 带时区,不用 unix timestamp;**破坏性写操作默认 dry-run / 需显式 confirm**。
 

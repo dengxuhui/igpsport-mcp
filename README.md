@@ -107,7 +107,7 @@ claude mcp add igpsport --scope user \
 | 工具 | 用途 |
 |---|---|
 | `create_workout` | 用自然语言描述结构化训练课(热身/主课/间歇/恢复),编译成 iGPSport 原生格式并推到你的码表 App;支持 `dry_run=true` 先预览不发送 |
-| `list_workouts` | 列出经本工具创建的课程(本地维护,iGPSport 无服务端列表接口) |
+| `list_workouts` | 从服务端实时拉取全部自定义课程(App 端删除也会同步反映) |
 | `get_workout_detail` | 拉取某节课程的完整结构 |
 | `delete_workout` | 删除课程。**破坏性、不可恢复**:默认只返回确认预览,需再带 `confirm=true` 才真正删除 |
 

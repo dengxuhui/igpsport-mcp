@@ -45,6 +45,9 @@ class IGPSportService:
         self._client = client
         self._db = db_conn
         self._member_cache: Any = _UNSET
+        # In-memory caches (session lifetime only).
+        self._fit_parse_cache: dict[str, Any] = {}
+        self._summary_cache: dict[str, dict[str, Any]] = {}
 
     # -- lazy deps ---------------------------------------------------------
 
@@ -101,10 +104,47 @@ class IGPSportService:
         return self._member_cache
 
     def _load_summary(self, ride_id: str | int) -> dict[str, Any]:
-        """Download + parse + compute a single activity's summary block."""
+        """Return cached or freshly computed derived-metric summary.
+
+        Cache layers (checked in order):
+        1. In-memory dict (session lifetime, zero I/O).
+        2. SQLite ``activity_metrics`` table (persistent across sessions).
+        3. Compute from FIT (slow path — download + parse + build_summary).
+        """
+        rid = str(ride_id)
+        from ..storage import db as db_mod
+
+        # Layer 1: in-memory.
+        if rid in self._summary_cache:
+            return self._summary_cache[rid]
+
+        # Layer 2: SQLite persistent cache.
+        cached = db_mod.get_activity_metrics(self.db, rid)
+        if cached and cached.get("metrics_json"):
+            import json
+
+            result = json.loads(cached["metrics_json"])
+            self._summary_cache[rid] = result
+            return result
+
+        # Layer 3: compute.
+        parsed = self._parse_fit_cached(ride_id)
+        result = build_summary(parsed, self._ftp, self._lthr)
+
+        # Persist for next session.
+        db_mod.save_activity_metrics(self.db, rid, result)
+        self._summary_cache[rid] = result
+        return result
+
+    def _parse_fit_cached(self, ride_id: str | int) -> Any:
+        """Download + parse FIT, cached in memory for the session."""
+        rid = str(ride_id)
+        if rid in self._fit_parse_cache:
+            return self._fit_parse_cache[rid]
         fit_path = self.client.download_fit(ride_id)
         parsed = parse_fit(fit_path)
-        return build_summary(parsed, self._ftp, self._lthr)
+        self._fit_parse_cache[rid] = parsed
+        return parsed
 
     def _activity_name(self, ride_id: str | int) -> str | None:
         from ..storage import db as db_mod
@@ -189,8 +229,8 @@ class IGPSportService:
         end_offset_s: int | None = None,
     ) -> dict[str, Any]:
         channels = channels or ["power", "hr"]
-        fit_path = self.client.download_fit(ride_id)
-        df = resample_to_1hz(parse_fit(fit_path).records)
+        parsed = self._parse_fit_cached(ride_id)
+        df = resample_to_1hz(parsed.records)
         if df.empty:
             return {
                 "ride_id": str(ride_id),
@@ -222,8 +262,7 @@ class IGPSportService:
         }
 
     def get_activity_laps(self, ride_id: str | int) -> dict[str, Any]:
-        fit_path = self.client.download_fit(ride_id)
-        parsed = parse_fit(fit_path)
+        parsed = self._parse_fit_cached(ride_id)
         df = resample_to_1hz(parsed.records)
         activity_start = df["timestamp"].iloc[0] if not df.empty else None
 
@@ -439,7 +478,7 @@ class IGPSportService:
     def create_workout(
         self, workout_ir: dict[str, Any], *, dry_run: bool = False
     ) -> dict[str, Any]:
-        """Validate + compile IR, POST to iGPSport, record in local storage.
+        """Validate + compile IR, POST to iGPSport.
 
         ``dry_run=True`` returns the compiled API body without sending it.
         """
@@ -455,58 +494,59 @@ class IGPSportService:
 
         result = self.client.create_workout(compiled)
         workout_id = result["workoutId"]
-        from ..storage import db as db_mod
-
-        db_mod.save_workout(self.db, workout_id, workout_ir, compiled)
         return {"success": True, "workout_id": workout_id}
 
-    def list_workouts(self, limit: int = 20) -> dict[str, Any]:
-        """List created workouts from local cache (newest first)."""
-        from ..storage import db as db_mod
-
-        rows = db_mod.list_workouts(self.db, limit=min(limit, 50))
-        return {"workouts": rows, "total": len(rows)}
+    def list_workouts(self) -> dict[str, Any]:
+        """List all custom workouts from iGPSport server."""
+        rows = self.client.list_workouts()
+        workouts = [
+            {
+                "workout_id": r["id"],
+                "title": r.get("title", ""),
+                "total_time_s": r.get("totalTime", 0),
+                "grade": r.get("grade", 0),
+            }
+            for r in rows
+        ]
+        return {"workouts": workouts, "total": len(workouts)}
 
     def get_workout_detail(self, workout_id: int) -> dict[str, Any]:
         """Fetch full workout detail from iGPSport server."""
         return self.client.get_workout_detail(int(workout_id))
 
     def delete_workout(self, workout_id: int, *, confirm: bool = False) -> dict[str, Any]:
-        """Delete a custom workout from both server and local cache.
+        """Delete a custom workout from the iGPSport server.
 
-        Destructive and irreversible on the iGPSport side. Requires
-        ``confirm=True``; otherwise returns a preview asking for confirmation.
+        Destructive and irreversible. Requires ``confirm=True``; otherwise
+        returns a preview asking for confirmation.
         """
         wid = int(workout_id)
-        from ..storage import db as db_mod
 
         if not confirm:
-            cached = db_mod.get_workout(self.db, wid)
+            title = None
+            try:
+                detail = self.client.get_workout_detail(wid)
+                title = (detail or {}).get("title")
+            except Exception:
+                pass
+
             return {
                 "success": False,
                 "requires_confirmation": True,
                 "workout_id": wid,
-                "title": cached.get("title") if cached else None,
+                "title": title,
                 "message": (
                     "This permanently deletes the workout on iGPSport and cannot "
                     "be undone. Re-call delete_workout with confirm=true to proceed."
                 ),
             }
 
-        server_ok = True
         try:
             self.client.delete_workout(wid)
+            return {"success": True, "workout_id": wid}
         except Exception as exc:
             logger.warning("Server delete for workout %d failed: %s", wid, exc)
-            server_ok = False
-
-        existed = db_mod.delete_workout(self.db, wid)
-        return {
-            "success": server_ok,
-            "workout_id": wid,
-            "was_cached": existed,
-            "note": "Local record cleaned" if existed and not server_ok else None,
-        }
+            return {"success": False, "workout_id": wid, "error": str(exc)}
 
     def get_segment_rank(
         self,

@@ -19,8 +19,9 @@ CREATE TABLE IF NOT EXISTS activities (
 CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities (start_time);
 
 -- Derived metrics computed locally from the FIT; keyed by ride.
+-- No FK to activities so that get_activity_summary works without a prior list_activities.
 CREATE TABLE IF NOT EXISTS activity_metrics (
-    ride_id              TEXT PRIMARY KEY REFERENCES activities (ride_id) ON DELETE CASCADE,
+    ride_id              TEXT PRIMARY KEY,
     normalized_power_w   REAL,
     intensity_factor     REAL,
     tss                  REAL,
@@ -37,16 +38,4 @@ CREATE TABLE IF NOT EXISTS athlete_profile (
     id          INTEGER PRIMARY KEY CHECK (id = 1),
     profile_json TEXT NOT NULL,
     fetched_at   TEXT NOT NULL
-);
-
--- Workouts created via MCP (keeps a local ID list so list_workouts works
--- without a server-side list endpoint).
-CREATE TABLE IF NOT EXISTS workouts (
-    workout_id    INTEGER PRIMARY KEY,
-    title         TEXT NOT NULL,
-    description   TEXT,
-    total_time_s  INTEGER,
-    ir_json       TEXT NOT NULL,    -- original LLM-facing IR
-    api_json      TEXT NOT NULL,    -- compiled iGPSport request body
-    created_at    TEXT NOT NULL
 );
