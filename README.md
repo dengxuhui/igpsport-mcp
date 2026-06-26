@@ -13,16 +13,44 @@ Claude(经由 analyze_training_load):
 
 > ⚠️ **非官方项目**。本工具通过**逆向 iGPSport 私有网页 API** 工作,iGPSport 随时可能改接口导致失效;请自行评估账号风险,**风险自负**。纯本地 stdio 运行,**你的数据不经任何第三方服务器**。
 
-## 安装
+## 快速上手(推荐)
 
-需要 Python ≥ 3.11 和 [uv](https://docs.astral.sh/uv/)。
+本工具是一个 MCP server,需要配合一个**支持 MCP 的客户端**使用(如 [Claude Desktop](https://claude.ai/download) / Claude Code / Cursor)。准备好客户端后,三步即可:
+
+**1. 装 uv**(一个独立小工具,**不需要你先有 Python**,它会自动帮你准备好运行环境):
 
 ```bash
-uvx igpsport-mcp            # 一次性运行(MCP 客户端会自动拉起)
-uv tool install igpsport-mcp   # 或全局安装
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows(PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
+**2. 全局安装并跑一次配置向导**(交互式填手机号/密码,凭证只存在本地)。两个系统命令一样,**macOS 在「终端」、Windows 在「PowerShell」里执行**:
+
+```bash
+uv tool install igpsport-mcp
+igpsport-mcp --setup
+```
+
+> 装完若提示 `igpsport-mcp` 找不到,重开一个终端/PowerShell 窗口让 PATH 生效(uv 会把可执行文件放进 macOS 的 `~/.local/bin`、Windows 的 `%USERPROFILE%\.local\bin`)。
+
+向导会把凭证写到 config.json(权限仅本人可读),并打印一段**可直接粘贴**的 MCP 配置。配置文件位置:
+
+- **macOS**:`~/.igpsport-mcp/config.json`
+- **Windows**:`C:\Users\你的用户名\.igpsport-mcp\config.json`
+
+**3. 把打印出来的配置粘到你的客户端**,重启客户端即可(见下「接入 Claude」)。
+
+> 之后想看粘贴用的配置,随时 `igpsport-mcp --mcp-config` 再打印一次。
+
+---
+
+> 开发者 / 已有环境:直接 `uvx igpsport-mcp` 一次性运行,或用下方的环境变量方式配置,无需走向导。
+
 ## 配置(环境变量)
+
+> 走过 `--setup` 向导的用户**可跳过本节**——凭证已存好。下面适合想用环境变量、或在 CI / 多环境里管理凭证的用户。环境变量优先级高于 config.json。
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
@@ -30,7 +58,7 @@ uv tool install igpsport-mcp   # 或全局安装
 | `IGPSPORT_PASSWORD` | ✅ | 密码 |
 | `IGPSPORT_FTP` | 选填 | 功率阈值(瓦)。**不填会自动读取 iGPSport 账号里设置的 FTP**;填了则覆盖 |
 | `IGPSPORT_LTHR` | 选填 | 乳酸阈心率(bpm),用于心率区间与 hrTSS 兜底。**不填同样自动从 iGPSport 读取**;填了则覆盖 |
-| `IGPSPORT_CACHE_DIR` | 选填 | 缓存目录,默认 `~/.cache/igpsport-mcp` |
+| `IGPSPORT_CACHE_DIR` | 选填 | 缓存目录,默认 macOS `~/.cache/igpsport-mcp`、Windows `C:\Users\你\.cache\igpsport-mcp` |
 | `IGPSPORT_LOG_LEVEL` | 选填 | 默认 `INFO` |
 
 > FTP / LTHR 现在默认从你 iGPSport 账号的运动信息里自动读取(还会带出体重、最大心率),所以**通常无需手动填**。只有当你想用与 App 不同的阈值时,才设这两个环境变量来覆盖。若账号里也没设 FTP,则无法计算 IF / TSS / CTL / ATL / TSB —— 请到 iGPSport 里补上,或填 `IGPSPORT_FTP`。
@@ -39,7 +67,28 @@ uv tool install igpsport-mcp   # 或全局安装
 
 ### Claude Desktop
 
-把下面这段拷进 `claude_desktop_config.json`(macOS:`~/Library/Application Support/Claude/`),填好凭证后**完全退出并重开** Claude Desktop:
+打开配置文件 `claude_desktop_config.json`(没有就新建),粘入下面的内容,然后**完全退出并重开** Claude Desktop。文件位置:
+
+- **macOS**:`~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**:`%APPDATA%\Claude\claude_desktop_config.json`(即 `C:\Users\你\AppData\Roaming\Claude\claude_desktop_config.json`)
+
+> 也可在 Claude Desktop 里点 **设置 → Developer → Edit Config** 直接打开这个文件。
+
+**走过 `--setup` 向导**(凭证已在 config.json,`env` 留空即可,这也是 `--mcp-config` 打印的内容):
+
+```json
+{
+  "mcpServers": {
+    "igpsport": {
+      "command": "igpsport-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
+```
+
+**或** 不走向导、用 `uvx` + 环境变量:
 
 ```json
 {
@@ -60,6 +109,14 @@ uv tool install igpsport-mcp   # 或全局安装
 
 ### Claude Code
 
+走过向导(凭证已存好):
+
+```bash
+claude mcp add igpsport --scope user -- igpsport-mcp
+```
+
+或用 uvx + 环境变量:
+
 ```bash
 claude mcp add igpsport --scope user \
   --env IGPSPORT_USERNAME=你的手机号 \
@@ -67,11 +124,38 @@ claude mcp add igpsport --scope user \
   -- uvx igpsport-mcp
 ```
 
-> 同样,需要覆盖阈值时再追加 `--env IGPSPORT_FTP=250 --env IGPSPORT_LTHR=160`。
-
 加完用 `/mcp` 或 `claude mcp list` 确认状态为 connected。
 
-> **连不上 / 找不到命令?** 多半是 `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `"uvx"` / `command` 换成 `which uvx` 输出的**绝对路径**(如 `/Users/你/.local/bin/uvx`)即可。
+> **连不上 / 找不到命令?** 多半是 `igpsport-mcp` / `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `command` 换成可执行文件的**绝对路径**:
+>
+> - **macOS**:终端跑 `which igpsport-mcp`(或 `which uvx`),如 `/Users/你/.local/bin/igpsport-mcp`。
+> - **Windows**:PowerShell 跑 `where.exe igpsport-mcp`(或 `where.exe uvx`),如 `C:\Users\你\.local\bin\igpsport-mcp.exe`。JSON 里反斜杠要写成双反斜杠,例如 `"command": "C:\\Users\\你\\.local\\bin\\igpsport-mcp.exe"`。
+
+## 卸载
+
+**1. 卸载程序本体**(两个系统一样):
+
+```bash
+uv tool uninstall igpsport-mcp
+```
+
+**2. 删除本地凭证与缓存**(可选,彻底清干净):
+
+```bash
+# macOS / Linux(终端)
+rm -rf ~/.igpsport-mcp        # 凭证 config.json
+rm -rf ~/.cache/igpsport-mcp  # token、SQLite、FIT 文件缓存
+```
+
+```powershell
+# Windows(PowerShell)
+Remove-Item -Recurse -Force "$env:USERPROFILE\.igpsport-mcp"
+Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
+```
+
+**3. 从客户端配置里移除 `igpsport`**:Claude Desktop 删掉 `claude_desktop_config.json` 里 `mcpServers` 下的 `igpsport` 块;Claude Code 用 `claude mcp remove igpsport`。
+
+> 用 `uvx igpsport-mcp` 一次性运行的没有「本体」需要卸载,只需做第 2、3 步即可。
 
 ## 提供的 16 个工具
 
