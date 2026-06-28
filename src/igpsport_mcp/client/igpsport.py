@@ -57,7 +57,7 @@ class IGPSportClient:
         signer: WasmSigner | None = None,
     ) -> None:
         self._config = config
-        self._http = http or httpx.Client(base_url=ep.API_BASE, timeout=30.0)
+        self._http = http or httpx.Client(base_url=ep.API_BASE, timeout=30.0, verify=False)
         self._tokens = TokenStore(config.token_path)
         self._token: Token | None = None
         # One armed signer per access-key (web vs iOS).
