@@ -476,11 +476,18 @@ class IGPSportService:
     # -- workout tools -------------------------------------------------------
 
     def create_workout(
-        self, workout_ir: dict[str, Any], *, dry_run: bool = False
+        self,
+        workout_ir: dict[str, Any],
+        *,
+        dry_run: bool = False,
+        with_calendar: bool = False,
     ) -> dict[str, Any]:
         """Validate + compile IR, POST to iGPSport.
 
         ``dry_run=True`` returns the compiled API body without sending it.
+        ``with_calendar=True`` attaches an opt-in ``calendar`` artifact (a
+        standard ``VEVENT`` with a ``{{SCHEDULED_DATE}}`` placeholder) for a
+        downstream calendar/reminder tool to consume.
         """
         from ..workout.ir import compile_workout, validate_workout_ir
 
@@ -489,12 +496,25 @@ class IGPSportService:
             return {"success": False, "errors": errors}
 
         compiled = compile_workout(workout_ir, ftp=self._ftp)
+
+        calendar: dict[str, Any] | None = None
+        if with_calendar:
+            from ..workout.ics import build_calendar
+
+            calendar = build_calendar(workout_ir, compiled)
+
         if dry_run:
-            return {"success": True, "dry_run": True, "compiled": compiled}
+            out: dict[str, Any] = {"success": True, "dry_run": True, "compiled": compiled}
+            if calendar is not None:
+                out["calendar"] = calendar
+            return out
 
         result = self.client.create_workout(compiled)
         workout_id = result["workoutId"]
-        return {"success": True, "workout_id": workout_id}
+        out = {"success": True, "workout_id": workout_id}
+        if calendar is not None:
+            out["calendar"] = calendar
+        return out
 
     def list_workouts(self) -> dict[str, Any]:
         """List all custom workouts from iGPSport server."""

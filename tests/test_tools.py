@@ -95,6 +95,21 @@ def test_create_workout_invalid_ir_returns_errors(tmp_path):
     assert client.created is None
 
 
+def test_create_workout_with_calendar_dry_run(tmp_path):
+    service, client = _workout_service(tmp_path)
+    out = service.create_workout(_SIMPLE_IR, dry_run=True, with_calendar=True)
+    assert client.created is None
+    cal = out["calendar"]
+    assert cal["title"] == "2x20 SST"
+    assert "DTSTART;VALUE=DATE:{{SCHEDULED_DATE}}" in cal["ical"]
+
+
+def test_create_workout_calendar_is_opt_in(tmp_path):
+    service, _ = _workout_service(tmp_path)
+    out = service.create_workout(_SIMPLE_IR, dry_run=True)
+    assert "calendar" not in out
+
+
 def test_list_workouts_from_server(tmp_path):
     service, _ = _workout_service(tmp_path)
     result = service.list_workouts()

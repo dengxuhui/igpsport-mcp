@@ -11,7 +11,11 @@ Claude(经由 analyze_training_load):
      过去两周 TSS 持续高于 CTL,建议安排 3-5 天恢复周让 TSB 回到 -5 以上……
 ```
 
-> ⚠️ **非官方项目**。本工具通过**逆向 iGPSport 私有网页 API** 工作,iGPSport 随时可能改接口导致失效;请自行评估账号风险,**风险自负**。纯本地 stdio 运行,**你的数据不经任何第三方服务器**。
+## 演示
+
+![igpsport-mcp 操作示例](assets/demo.gif)
+
+> ⚠️ **非官方项目**。本工具通过**模拟 iGPSport 网页端请求**工作,iGPSport 随时可能改接口导致失效;请自行评估账号风险,**风险自负**。纯本地 stdio 运行,**你的数据不经任何第三方服务器**。
 
 ## 快速上手(推荐)
 
@@ -42,11 +46,25 @@ igpsport-mcp --setup
 
 **3. 把打印出来的配置粘到你的客户端**,重启客户端即可(见下「接入 Claude」)。
 
+> 粘贴前想确认账号密码没填错,先跑一次 `igpsport-mcp --check`——它会实际登录一次,打印 ✅ 成功或 ❌ 失败原因,省得加进客户端才发现连不上。
+>
 > 之后想看粘贴用的配置,随时 `igpsport-mcp --mcp-config` 再打印一次。
 
 ---
 
 > 开发者 / 已有环境:直接 `uvx igpsport-mcp` 一次性运行,或用下方的环境变量方式配置,无需走向导。
+
+## 命令行用法
+
+无参数运行即以 stdio 模式启动 MCP server(供客户端拉起,平时不用手动跑)。其余子命令:
+
+| 命令 | 用途 |
+|---|---|
+| `igpsport-mcp --setup` | 交互式配置向导:填手机号/密码,存到本地 config.json |
+| `igpsport-mcp --mcp-config` | 打印可直接粘贴的 MCP 客户端配置 |
+| `igpsport-mcp --check` | 实际登录一次,验证凭证是否可用(账号会脱敏显示) |
+| `igpsport-mcp --version` | 打印版本号 |
+| `igpsport-mcp --help` | 显示帮助 |
 
 ## 配置(环境变量)
 
@@ -126,10 +144,24 @@ claude mcp add igpsport --scope user \
 
 加完用 `/mcp` 或 `claude mcp list` 确认状态为 connected。
 
-> **连不上 / 找不到命令?** 多半是 `igpsport-mcp` / `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `command` 换成可执行文件的**绝对路径**:
+> **连不上?** 先在终端跑 `igpsport-mcp --check` 把问题分开:
+> - 报 ❌ 登录失败 → 是账号密码问题,重跑 `igpsport-mcp --setup`。
+> - 报 ✅ 成功但客户端仍连不上 → 多半是 `igpsport-mcp` / `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `command` 换成可执行文件的**绝对路径**:
 >
 > - **macOS**:终端跑 `which igpsport-mcp`(或 `which uvx`),如 `/Users/你/.local/bin/igpsport-mcp`。
 > - **Windows**:PowerShell 跑 `where.exe igpsport-mcp`(或 `where.exe uvx`),如 `C:\Users\你\.local\bin\igpsport-mcp.exe`。JSON 里反斜杠要写成双反斜杠,例如 `"command": "C:\\Users\\你\\.local\\bin\\igpsport-mcp.exe"`。
+
+## 更新
+
+**`uv tool install` 安装的**(两个系统一样),升级到最新版:
+
+```bash
+uv tool upgrade igpsport-mcp
+```
+
+升级后重启客户端(Claude Desktop 完全退出再开;Claude Code 重连即可)。看当前版本:`igpsport-mcp --version`。
+
+> **`uvx igpsport-mcp` 一次性运行的**无需手动升级——uvx 默认用最新版。若本地缓存了旧版,用 `uvx igpsport-mcp@latest` 或清缓存 `uv cache clean` 后再跑即可拿到最新。
 
 ## 卸载
 
@@ -190,7 +222,7 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 
 | 工具 | 用途 |
 |---|---|
-| `create_workout` | 用自然语言描述结构化训练课(热身/主课/间歇/恢复),编译成 iGPSport 原生格式并推到你的码表 App;支持 `dry_run=true` 先预览不发送 |
+| `create_workout` | 用自然语言描述结构化训练课(热身/主课/间歇/恢复),编译成 iGPSport 原生格式并推到你的码表 App;支持 `dry_run=true` 先预览不发送;`with_calendar=true` 额外返回一段标准 iCalendar(`VEVENT`)产物,可让 LLM 转手写进苹果日历 / 提醒事项 / Notion 等下游工具 |
 | `list_workouts` | 从服务端实时拉取全部自定义课程(App 端删除也会同步反映) |
 | `get_workout_detail` | 拉取某节课程的完整结构 |
 | `delete_workout` | 删除课程。**破坏性、不可恢复**:默认只返回确认预览,需再带 `confirm=true` 才真正删除 |
@@ -215,6 +247,9 @@ A:不会有第三方。除了向 iGPSport 读写**你自己账号**的数据(读
 
 **Q:`create_workout` / `delete_workout` 会乱动我的数据吗?**
 A:`create_workout` 只新增训练课程,可先 `dry_run=true` 预览编译结果再决定是否发送。`delete_workout` 是不可恢复操作,默认只返回确认预览,必须显式 `confirm=true` 才真正删除——所以 LLM 不会在你没确认时删掉课程。
+
+**Q:`with_calendar` 会自动写我的日历吗?**
+A:不会。本服务**只产出**一段标准 iCalendar(`VEVENT`)文本,自己绝不碰任何日历 API、也不外发数据。是否真正写入,由你的 LLM 客户端把这段产物转交给另一个日历/提醒类工具(如苹果日历、提醒事项、Notion 的 MCP)来决定。训练课是没有执行日期的模板,所以 `DTSTART` 是占位符 `{{SCHEDULED_DATE}}`,具体排到哪天由下游填。
 
 **Q:接口失效了怎么办?**
 A:iGPSport 改版可能导致失效,工具会抛出明确错误。欢迎到 [Issues](https://github.com/dengxuhui/igpsport-mcp/issues) 反馈。

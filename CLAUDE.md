@@ -54,7 +54,9 @@ server 内部分层(自上而下):
 `get_member_statistics`(官方年度统计 + 个人最佳)。
 
 ### 训练课程类(4 个,唯一写入路径)
-`create_workout`(IR → 推到 App,带 `dry_run` 预览)、`list_workouts`(从服务端实时拉取,非本地缓存)、`get_workout_detail`、`delete_workout`(破坏性,需 `confirm=True`,默认只返回预览)。
+`create_workout`(IR → 推到 App,带 `dry_run` 预览;`with_calendar=True` 可选附一段标准 iCalendar `VEVENT` 产物,交下游日历/提醒工具消费)、`list_workouts`(从服务端实时拉取,非本地缓存)、`get_workout_detail`、`delete_workout`(破坏性,需 `confirm=True`,默认只返回预览)。
+
+> **日历产物(`with_calendar`)**:opt-in,默认关。本质是「生产标准化产物、由 LLM 编排转手给别的 MCP」,**不是**自己写日历副作用——不碰外部 API、不破坏「数据不外流」。workout 是无执行日期的模板,故 `VEVENT` 的 `DTSTART` 用占位符 `{{SCHEDULED_DATE}}`,排期交下游填。生成逻辑在 `workout/ics.py`,纯函数、零网络。
 
 设计原则:输入参数极简;输出始终 compact JSON;返回 array 的工具都要有 `limit`;stream 类都要支持降采样;时间字段统一 ISO 8601 带时区,不用 unix timestamp;**破坏性写操作默认 dry-run / 需显式 confirm**。
 

@@ -11,7 +11,12 @@ from ._service import IGPSportService
 
 def register(server: FastMCP, service: IGPSportService) -> None:
     @server.tool()
-    def create_workout(workout_ir: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
+    def create_workout(
+        workout_ir: dict[str, Any],
+        *,
+        dry_run: bool = False,
+        with_calendar: bool = False,
+    ) -> dict[str, Any]:
         """Create a training workout from an LLM-friendly IR.
 
         The ``workout_ir`` dict follows the schema documented in
@@ -21,8 +26,15 @@ def register(server: FastMCP, service: IGPSportService) -> None:
 
         Set ``dry_run=True`` to validate + preview the compiled API body
         without sending it.
+
+        Set ``with_calendar=True`` to also return a ``calendar`` artifact —
+        a standard iCalendar ``VEVENT`` (plus summary/description) you can
+        hand to a downstream calendar or reminder tool. A workout is a
+        template with no execution date, so ``DTSTART`` is the literal
+        placeholder ``{{SCHEDULED_DATE}}`` (``YYYYMMDD``) for the consumer to
+        fill in.
         """
-        return service.create_workout(workout_ir, dry_run=dry_run)
+        return service.create_workout(workout_ir, dry_run=dry_run, with_calendar=with_calendar)
 
     @server.tool()
     def list_workouts() -> dict[str, Any]:
