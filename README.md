@@ -144,6 +144,56 @@ claude mcp add igpsport --scope user \
 
 加完用 `/mcp` 或 `claude mcp list` 确认状态为 connected。
 
+### OpenClaw
+
+[OpenClaw](https://github.com/openclaw/openclaw) 的 MCP 走 stdio,跟 Claude Desktop / Claude Code 是同一套协议,所以上面的配置可以直接搬过来。
+
+**方式一:直接用自然语言让 OpenClaw 自己装(推荐)**
+
+先确保已 `uv tool install igpsport-mcp` 并跑过 `igpsport-mcp --setup`,然后在你接入的聊天渠道里直接对 OpenClaw 说:
+
+> 我装了 igpsport-mcp 这个工具,帮我配置到 OpenClaw 里。
+
+它会自己定位二进制路径、用 `igpsport-mcp --check` 验证凭证、调 `openclaw mcp add` 写进配置并 probe 一遍,全程不用你碰命令行或 JSON。
+
+**方式二:手动一条命令搞定**
+
+```bash
+# 走过向导(凭证已存好)
+openclaw mcp add igpsport --command igpsport-mcp
+
+# 或用 uvx + 环境变量
+openclaw mcp add igpsport --command uvx --args igpsport-mcp \
+  --env IGPSPORT_USERNAME=你的手机号 \
+  --env IGPSPORT_PASSWORD=你的密码
+```
+
+写入位置是 `~/.openclaw/openclaw.json` 的 `mcp.servers.igpsport`,也可手动编辑该文件:
+
+```json5
+{
+  mcp: {
+    servers: {
+      igpsport: {
+        command: "igpsport-mcp",
+        args: [],
+        env: {}
+      }
+    }
+  }
+}
+```
+
+验证:
+
+```bash
+openclaw mcp list      # 看到 igpsport
+openclaw mcp status    # igpsport: stdio
+openclaw mcp probe     # igpsport: 16 tools, resources, prompts
+```
+
+`mcp` 是热生效字段,无需重启 gateway,下一轮会话起即可调用;必要时 `openclaw mcp reload` 强制刷新运行时缓存。之后在你接入的聊天渠道(Discord / Telegram / Slack 等)里直接用自然语言提问即可。
+
 > **连不上?** 先在终端跑 `igpsport-mcp --check` 把问题分开:
 > - 报 ❌ 登录失败 → 是账号密码问题,重跑 `igpsport-mcp --setup`。
 > - 报 ✅ 成功但客户端仍连不上 → 多半是 `igpsport-mcp` / `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `command` 换成可执行文件的**绝对路径**:
@@ -185,7 +235,7 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.igpsport-mcp"
 Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 ```
 
-**3. 从客户端配置里移除 `igpsport`**:Claude Desktop 删掉 `claude_desktop_config.json` 里 `mcpServers` 下的 `igpsport` 块;Claude Code 用 `claude mcp remove igpsport`。
+**3. 从客户端配置里移除 `igpsport`**:Claude Desktop 删掉 `claude_desktop_config.json` 里 `mcpServers` 下的 `igpsport` 块;Claude Code 用 `claude mcp remove igpsport`;OpenClaw 用 `openclaw mcp remove igpsport`(或删掉 `~/.openclaw/openclaw.json` 里 `mcp.servers` 下的 `igpsport` 块)。
 
 > 用 `uvx igpsport-mcp` 一次性运行的没有「本体」需要卸载,只需做第 2、3 步即可。
 
