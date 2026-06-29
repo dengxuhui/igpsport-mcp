@@ -199,9 +199,15 @@ class IGPSportService:
 
         window = collected[offset : offset + limit]
         has_more = len(collected) > offset + limit or more_pages
+        # `total` is the number of activities actually returned in this window,
+        # not the over-fetched page count: when limit is small we stop paging
+        # early (server caps each page at ~20), so len(collected) is an artifact
+        # of page granularity, never the true server total. `has_more` signals
+        # whether more remain. (For a fully-enumerated date range, window ==
+        # collected, so this still reports the true matched count.)
         return {
             "activities": [norm.to_list_output(i) for i in window],
-            "total": len(collected),
+            "total": len(window),
             "has_more": has_more,
         }
 

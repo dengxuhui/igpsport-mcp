@@ -53,6 +53,7 @@ def _iso_datetime(value: Any, tz: str = "+08:00") -> str | None:
 def normalize_list_row(row: dict[str, Any]) -> dict[str, Any]:
     ride_id = _first(row, "rideId", "id", "activityId")
     distance_m = _first(row, "rideDistance")
+    speed_ms = _first(row, "avgSpeed")
     return {
         "ride_id": str(ride_id) if ride_id is not None else None,
         "name": _first(row, "title", "name"),
@@ -60,6 +61,7 @@ def normalize_list_row(row: dict[str, Any]) -> dict[str, Any]:
         "duration_s": _first(row, "totalMovingTime", "recordTime"),
         "distance_km": round(distance_m / 1000, 2) if distance_m is not None else None,
         "elevation_gain_m": _first(row, "totalAscent"),
+        "avg_speed_kmh": round(speed_ms * 3.6, 1) if speed_ms is not None else None,
         "exercise_type": _first(row, "exerciseType"),
         "raw": row,
     }
@@ -84,6 +86,9 @@ def matches(
 
 
 def to_list_output(item: dict[str, Any]) -> dict[str, Any]:
+    # Power/HR are intentionally absent: the queryMyActivity payload has neither,
+    # and surfacing them as null misleads the LLM into "no power meter / no HR
+    # sensor". Per-ride power/HR live in get_activity_summary (parsed from FIT).
     return {
         "ride_id": item["ride_id"],
         "name": item["name"],
@@ -91,8 +96,7 @@ def to_list_output(item: dict[str, Any]) -> dict[str, Any]:
         "duration_s": item["duration_s"],
         "distance_km": item["distance_km"],
         "elevation_gain_m": item["elevation_gain_m"],
-        "avg_power_w": None,  # not in list payload; use get_activity_summary
-        "avg_hr_bpm": None,
+        "avg_speed_kmh": item["avg_speed_kmh"],
     }
 
 

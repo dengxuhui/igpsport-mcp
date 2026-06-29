@@ -35,9 +35,11 @@ def test_sport_filter():
 
 
 def test_list_output_omits_power_hr():
+    # queryMyActivity has no power/HR; the keys must be absent (not null), else
+    # the LLM reads them as "no sensor". Per-ride power/HR is in get_activity_summary.
     out = norm.to_list_output(norm.normalize_list_row(_ROW))
-    assert out["avg_power_w"] is None
-    assert out["avg_hr_bpm"] is None
+    assert "avg_power_w" not in out
+    assert "avg_hr_bpm" not in out
     assert set(out) == {
         "ride_id",
         "name",
@@ -45,9 +47,16 @@ def test_list_output_omits_power_hr():
         "duration_s",
         "distance_km",
         "elevation_gain_m",
-        "avg_power_w",
-        "avg_hr_bpm",
+        "avg_speed_kmh",
     }
+
+
+def test_list_output_includes_avg_speed():
+    row = {**_ROW, "avgSpeed": 7.5}  # m/s
+    out = norm.to_list_output(norm.normalize_list_row(row))
+    assert out["avg_speed_kmh"] == 27.0
+    # Missing avgSpeed degrades to None, not a crash.
+    assert norm.to_list_output(norm.normalize_list_row(_ROW))["avg_speed_kmh"] is None
 
 
 def test_cache_row_serializes_raw():
