@@ -32,7 +32,7 @@ LLM Client ──stdio(MCP)── igpsport-mcp ──HTTPS── iGPSport 私有
 
 server 内部分层(自上而下):
 
-1. **MCP Tool Layer**(`tools/`)——见下 16 个 tool。
+1. **MCP Tool Layer**(`tools/`)——见下 17 个 tool。
 2. **Analysis Layer**(`analysis/`)——派生指标服务端算好再返回。
 3. **Workout IR**(`workout/ir.py`)——人类单位 IR ↔ iGPSport 原生课程格式的编译/校验。
 4. **FIT Parser**(`fit/parser.py`)——`fitparse` 封装。
@@ -45,10 +45,10 @@ server 内部分层(自上而下):
 
 **数据流**:工具优先查 SQLite 缓存,miss 才打 API;FIT 文件本地永久缓存;同一活动的后续请求零 API 调用。
 
-## 16 个 MCP Tool
+## 17 个 MCP Tool
 
-### 活动类(8 个)
-`list_activities`、`get_activity_summary`(最高频,务必准且快)、`get_activity_streams`(强制降采样+通道选择)、`get_activity_laps`、`get_athlete_profile`、`get_athlete_stats`、`compare_activities`、`analyze_training_load`(CTL/ATL/TSB 趋势,杀手 query)。
+### 活动类(9 个)
+`list_activities`、`get_activity_summary`(最高频,务必准且快)、`get_activity_streams`(强制降采样+通道选择)、`get_activity_laps`、`get_athlete_profile`、`get_athlete_stats`、`estimate_thresholds`(没测过阈值时从历史 mean-max 曲线估算 FTP/LTHR,带置信度+依据+「建议正式测试」;**只读不回写**,用户手动填)、`compare_activities`、`analyze_training_load`(CTL/ATL/TSB 趋势,杀手 query)。
 
 ### 赛段类(3 个,仅国服)
 `list_segments_collected`(我收藏的赛段)、`get_segment_detail`(赛段详情+我的PR+KOM+最快榜)、`get_segment_rank`(排行榜)。国际版无赛段功能。

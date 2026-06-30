@@ -218,7 +218,7 @@ Verification:
 ```bash
 openclaw mcp list      # should show igpsport
 openclaw mcp status    # igpsport: stdio
-openclaw mcp probe     # igpsport: 16 tools, resources, prompts
+openclaw mcp probe     # igpsport: 17 tools, resources, prompts
 ```
 
 The `mcp` field is hot-reloaded — no gateway restart needed; it takes effect in the next conversation turn. Use `openclaw mcp reload` to force-refresh the runtime cache if needed. Then ask questions in natural language from any connected channel (Discord, Telegram, Slack, etc.).
@@ -268,9 +268,9 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 
 > For `uvx igpsport-mcp` one-shot users, there is no "program" to uninstall — just do steps 2 and 3.
 
-## 16 Tools Provided
+## 17 Tools Provided
 
-**Activities & Training (8)**
+**Activities & Training (9)**
 
 | Tool | Purpose |
 |---|---|
@@ -280,6 +280,7 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 | `get_activity_laps` | Lap / segment data (per-lap NP) |
 | `get_athlete_profile` | Training parameters: FTP / LTHR (auto-read from iGPSport or overridden via env vars); body weight and max HR always from iGPSport; includes zone boundaries |
 | `get_athlete_stats` | Period-aggregated statistics (computed locally from activity list) |
+| `estimate_thresholds` | Estimate FTP / LTHR from recent rides' mean-max curves for riders who haven't done a formal test (Coggan 20-min, critical-power cross-check, Friel HR field test); each value carries a confidence level + evidence + a "confirm with a formal test" caveat. Read-only — never writes back, the rider applies it manually |
 | `compare_activities` | Compare multiple activities (2–5) |
 | `analyze_training_load` | CTL / ATL / TSB trend + form interpretation (the killer query) |
 

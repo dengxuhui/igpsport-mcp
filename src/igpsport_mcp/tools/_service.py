@@ -17,7 +17,9 @@ import pandas as pd
 
 from ..analysis import compact, load, power
 from ..analysis import hr as hr_mod
+from ..analysis import thresholds as thresholds_mod
 from ..analysis.summary import build_summary
+from ..analysis.thresholds import ActivitySignal
 from ..config import Config
 from ..fit.parser import parse_fit, resample_to_1hz
 from . import _normalize as norm
@@ -435,6 +437,40 @@ class IGPSportService:
                 "interpretation": load.interpret_form(last["ctl"], last["atl"], last["tsb"]),
             },
         }
+
+    def estimate_thresholds(
+        self, window_days: int = 42, end_date: str | None = None
+    ) -> dict[str, Any]:
+        end = _parse_date(end_date) or datetime.now(UTC).date()
+        # Always fetch the widest window the estimator might use (it falls back
+        # from window_days to 90 days when the primary window is too sparse).
+        fetch_start = end - timedelta(days=thresholds_mod._FALLBACK_WINDOW_DAYS)
+        listing = self.list_activities(
+            start_date=fetch_start.isoformat(), end_date=end.isoformat(), limit=100
+        )
+
+        power_col = norm.CHANNEL_FIELDS["power"]
+        hr_col = norm.CHANNEL_FIELDS["hr"]
+        signals: list[ActivitySignal] = []
+        for act in listing["activities"]:
+            day = _parse_date(act.get("start_time"))
+            if not day:
+                continue
+            try:
+                parsed = self._parse_fit_cached(act["ride_id"])
+                df = resample_to_1hz(parsed.records)
+            except Exception as exc:  # one bad FIT must not break the rest
+                logger.warning("threshold estimate: skip ride %s (%s)", act.get("ride_id"), exc)
+                continue
+            if df.empty:
+                continue
+            power_1hz = df[power_col].tolist() if power_col in df.columns else None
+            hr_1hz = df[hr_col].tolist() if hr_col in df.columns else None
+            signals.append(ActivitySignal(day=day, power_1hz=power_1hz, hr_1hz=hr_1hz))
+
+        return thresholds_mod.estimate_thresholds(
+            signals, window_days=window_days, reference_day=end
+        )
 
     # -- segment tools -------------------------------------------------------
 

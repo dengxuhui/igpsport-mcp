@@ -1,4 +1,4 @@
-"""Tools: get_athlete_profile, get_athlete_stats, get_member_statistics."""
+"""Tools: get_athlete_profile, get_athlete_stats, get_member_statistics, estimate_thresholds."""
 
 from __future__ import annotations
 
@@ -33,3 +33,18 @@ def register(server: FastMCP, service: IGPSportService) -> None:
         -1 = all sports.
         """
         return service.get_member_statistics(time, stat_type, big_sport_type)
+
+    @server.tool()
+    def estimate_thresholds(window_days: int = 42, end_date: str | None = None) -> dict[str, Any]:
+        """Estimate FTP & LTHR from recent rides' mean-max curves, for riders who
+        haven't done a formal test.
+
+        Aggregates the power/HR duration peaks across all activities in the window
+        (default 42 days, auto-widening to 90 when sparse) and applies authoritative
+        methods (Coggan 20-min, critical-power cross-check, Friel HR field test).
+        Each estimate carries a confidence level (high/medium/low) plus evidence and
+        a "confirm with a formal test" caveat; returns ``None`` for a value the data
+        can't support (e.g. FTP without any power data). Read-only — never writes the
+        values back to iGPSport; the rider applies them manually.
+        """
+        return service.estimate_thresholds(window_days, end_date)

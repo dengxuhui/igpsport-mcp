@@ -218,7 +218,7 @@ openclaw mcp add igpsport --command uvx --args igpsport-mcp \
 ```bash
 openclaw mcp list      # 看到 igpsport
 openclaw mcp status    # igpsport: stdio
-openclaw mcp probe     # igpsport: 16 tools, resources, prompts
+openclaw mcp probe     # igpsport: 17 tools, resources, prompts
 ```
 
 `mcp` 是热生效字段,无需重启 gateway,下一轮会话起即可调用;必要时 `openclaw mcp reload` 强制刷新运行时缓存。之后在你接入的聊天渠道(Discord / Telegram / Slack 等)里直接用自然语言提问即可。
@@ -268,9 +268,9 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 
 > 用 `uvx igpsport-mcp` 一次性运行的没有「本体」需要卸载,只需做第 2、3 步即可。
 
-## 提供的 16 个工具
+## 提供的 17 个工具
 
-**活动与训练(8)**
+**活动与训练(9)**
 
 | 工具 | 用途 |
 |---|---|
@@ -280,6 +280,7 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 | `get_activity_laps` | 圈/分段数据(逐圈 NP) |
 | `get_athlete_profile` | 训练参数:FTP/LTHR(自动读 iGPSport 或用环境变量覆盖);体重、最大心率始终从 iGPSport 读取;含区间边界 |
 | `get_athlete_stats` | 周期聚合统计(本地从活动列表算) |
+| `estimate_thresholds` | 没测过阈值时,从近期活动的 mean-max 曲线**估算 FTP/LTHR**(Coggan 20 分钟法 + 临界功率交叉验证 + Friel 心率场地测试);每个值带置信度 + 依据 + 「建议正式测试校准」提示。只读——不回写,由用户手动填入 |
 | `compare_activities` | 多次活动对比(2–5 条) |
 | `analyze_training_load` | CTL/ATL/TSB 趋势 + 状态解读(杀手 query) |
 

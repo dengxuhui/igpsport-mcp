@@ -1,7 +1,9 @@
+import pandas as pd
 import pytest
 
 from igpsport_mcp.config import load_config
 from igpsport_mcp.storage import db as db_mod
+from igpsport_mcp.tools import _service as service_mod
 from igpsport_mcp.tools._service import IGPSportService
 
 
@@ -295,3 +297,31 @@ def test_get_activity_laps_real_fit(tmp_path, sample_fit):
     if out["laps"]:
         lap = out["laps"][0]
         assert {"lap_index", "duration_s", "distance_km"} <= set(lap)
+
+
+def test_estimate_thresholds_orchestration(tmp_path, monkeypatch):
+    # Two usable rides (a 20-min @250W ride and a 5-min @300W ride) + one whose
+    # FIT fails to parse and must be skipped without breaking the rest.
+    pages = [[_raw(1, "2026.06.28"), _raw(2, "2026.06.20"), _raw(3, "2026.06.15")]]
+    svc = _service(tmp_path, FakeClient(pages=pages))
+
+    class _Parsed:
+        def __init__(self, rid):
+            self.records = str(rid)
+
+    monkeypatch.setattr(svc, "_parse_fit_cached", lambda rid: _Parsed(rid))
+
+    dfs = {
+        "1": pd.DataFrame({"power": [250.0] * 1200, "heart_rate": [160.0] * 1200}),
+        "2": pd.DataFrame({"power": [300.0] * 300, "heart_rate": [150.0] * 300}),
+    }
+    # Ride 3 missing -> KeyError inside the parse/resample block -> skipped.
+    monkeypatch.setattr(service_mod, "resample_to_1hz", lambda records: dfs[records])
+
+    out = svc.estimate_thresholds(window_days=42, end_date="2026-06-30")
+    assert out["n_power_activities"] == 2  # ride 3 skipped
+    assert out["ftp"]["method"] == "20min_best*0.95"
+    assert out["ftp"]["evidence"]["best_20min_w"] == 250
+    assert out["ftp"]["evidence"]["best_5min_w"] == 300
+    assert out["lthr"]["method"] == "best_20min_hr"
+    assert out["lthr"]["value"] == 160

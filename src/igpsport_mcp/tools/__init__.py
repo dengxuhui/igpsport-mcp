@@ -1,4 +1,4 @@
-"""MCP tool layer. ``register_all`` wires the 16 tools onto the FastMCP server."""
+"""MCP tool layer. ``register_all`` wires the 17 tools onto the FastMCP server."""
 
 from __future__ import annotations
 

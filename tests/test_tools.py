@@ -11,6 +11,7 @@ EXPECTED_TOOLS = {
     "get_athlete_profile",
     "get_athlete_stats",
     "get_member_statistics",
+    "estimate_thresholds",
     "compare_activities",
     "analyze_training_load",
     "list_segments_collected",
