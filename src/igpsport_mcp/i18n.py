@@ -72,28 +72,23 @@ _CATALOG: dict[str, dict[str, str]] = {
         "setup_username_prompt": "  Phone / Email: ",
         "setup_password_prompt": "  Password:      ",
         "setup_optional_hint": (
-            "\n  Next two are optional (leave blank"
-            " to auto-read from your iGPSport profile):\n"
+            "\n  Next two are optional (leave blank to auto-read from your iGPSport profile):\n"
         ),
         "setup_ftp_prompt": (
-            "  FTP threshold / watts (1h max)"
-            " (optional, Enter to skip) [{default}]: "
+            "  FTP threshold / watts (1h max) (optional, Enter to skip) [{default}]: "
         ),
         "setup_lthr_prompt": (
-            "  LTHR lactate threshold HR / bpm"
-            " (optional, Enter to skip) [{default}]: "
+            "  LTHR lactate threshold HR / bpm (optional, Enter to skip) [{default}]: "
         ),
         "setup_empty_credentials": (
-            "❌ Phone/Email and password cannot be empty."
-            " Not saved. Re-run."
+            "❌ Phone/Email and password cannot be empty. Not saved. Re-run."
         ),
         "setup_saved": "✅ Config saved to {path}\n",
         "mcp_config_header": "📋 Copy the JSON below into your Claude Desktop config:",
         "mcp_config_path": "   Path: {path}\n",
         "mcp_config_add": '   Add under "mcpServers":',
         "mcp_config_tip_stored": (
-            "  💡 Credentials stored in local config.json"
-            " — no env vars needed.\n"
+            "  💡 Credentials stored in local config.json — no env vars needed.\n"
         ),
         "mcp_config_tip_cc": "  📖 Claude Code users can also use:",
         # ── Workout intensity labels ──
