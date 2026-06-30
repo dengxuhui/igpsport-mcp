@@ -7,6 +7,7 @@ skipped (pure JWT). Network errors retry 3x with exponential backoff.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import time
@@ -48,6 +49,25 @@ def _extract_rows(data: Any) -> list[dict[str, Any]]:
     else:
         rows = []
     return list(rows)
+
+
+def _decode_jwt_memberid(jwt_token: str) -> str:
+    """Extract ``memberid`` claim from an unverified JWT payload (second segment).
+
+    Returns the empty string if decoding fails for any reason — the caller
+    treats an empty member_id as invalid and forces a fresh login.
+    """
+    try:
+        payload_b64 = jwt_token.split(".")[1]
+        # urlsafe_b64decode requires padding to a multiple of 4.
+        missing = len(payload_b64) % 4
+        if missing:
+            payload_b64 += "=" * (4 - missing)
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        payload = json.loads(payload_bytes)
+        return str(payload.get("memberid", ""))
+    except Exception:
+        return ""
 
 
 class IGPSportClient:
@@ -201,7 +221,13 @@ class IGPSportClient:
         data = payload.get("data") or {}
         if "access_token" not in data:
             raise LoginError("Login failed, check IGPSPORT_USERNAME/PASSWORD")
-        token = Token.from_login(data)
+
+        # Decode memberid from JWT payload (second base64 segment).
+        jwt_raw = data["access_token"]
+        member_id = _decode_jwt_memberid(jwt_raw)
+        region = self._profile.key
+
+        token = Token.from_login(data, region=region, member_id=member_id)
         self._tokens.save(token)
         self._token = token
         return token
@@ -209,6 +235,13 @@ class IGPSportClient:
     def _jwt(self) -> str:
         token = self._token or self._tokens.load()
         if token is None or token.is_expired():
+            token = self.login()
+        # Cross-region guard: CN and INTL share an auth server but different
+        # user databases. A token from the wrong region (or an old v0.6 token
+        # missing member_id) must be discarded to avoid reading another user's
+        # data.
+        if token.region != self._profile.key or not token.member_id:
+            self._tokens.clear()
             token = self.login()
         self._token = token
         return token.access_token

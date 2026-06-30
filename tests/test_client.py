@@ -1,3 +1,6 @@
+import base64
+import json as _json
+
 import httpx
 import pytest
 
@@ -5,6 +8,16 @@ from igpsport_mcp.client import endpoints as ep
 from igpsport_mcp.client.igpsport import IGPSportClient
 from igpsport_mcp.config import load_config
 from igpsport_mcp.exceptions import IGPSportAPIChangedError, LoginError
+
+
+def _mock_jwt(member_id: str = "12345") -> str:
+    """Generate a fake JWT with a decodable memberid claim in the payload."""
+    payload_b64 = (
+        base64.urlsafe_b64encode(_json.dumps({"memberid": member_id}).encode())
+        .rstrip(b"=")
+        .decode()
+    )
+    return f"header.{payload_b64}.fake-sig"
 
 
 class StubSigner:
@@ -32,18 +45,21 @@ def make_client(tmp_path, http):
 
 
 def test_login_success(tmp_path, httpx_mock):
+    jwt = _mock_jwt("123")
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",
         json={
             "code": 0,
-            "data": {"access_token": "jwt-123", "refresh_token": "r", "expires_in": 604800},
+            "data": {"access_token": jwt, "refresh_token": "r", "expires_in": 604800},
         },
     )
     http = httpx.Client(base_url=ep.API_BASE)
     with make_client(tmp_path, http) as client:
         token = client.login()
-    assert token.access_token == "jwt-123"
+    assert token.access_token == jwt
+    assert token.region == "cn"
+    assert token.member_id == "123"
     assert (tmp_path / "token.json").exists()
 
 
@@ -62,7 +78,7 @@ def test_list_activities_parses_rows(tmp_path, httpx_mock):
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",
-        json={"code": 0, "data": {"access_token": "jwt", "expires_in": 604800}},
+        json={"code": 0, "data": {"access_token": _mock_jwt(), "expires_in": 604800}},
     )
     httpx_mock.add_response(
         url=ep.API_BASE
@@ -81,7 +97,7 @@ def test_download_fit_two_step(tmp_path, httpx_mock):
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",
-        json={"code": 0, "data": {"access_token": "jwt", "expires_in": 604800}},
+        json={"code": 0, "data": {"access_token": _mock_jwt(), "expires_in": 604800}},
     )
     oss_url = "https://igp-zh.oss-cn-hangzhou.aliyuncs.com/abc123"
     httpx_mock.add_response(
@@ -106,7 +122,7 @@ def test_business_error_raises_api_changed(tmp_path, httpx_mock):
     httpx_mock.add_response(
         url=ep.API_BASE + ep.PATH_LOGIN,
         method="POST",
-        json={"code": 0, "data": {"access_token": "jwt", "expires_in": 604800}},
+        json={"code": 0, "data": {"access_token": _mock_jwt(), "expires_in": 604800}},
     )
     httpx_mock.add_response(
         url=ep.API_BASE

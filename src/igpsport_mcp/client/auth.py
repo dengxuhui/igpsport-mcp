@@ -1,8 +1,11 @@
 """Token lifecycle: cache JWT + refresh_token, decide when to re-login.
 
 Token is cached at ``<cache_dir>/token.json`` with an absolute ``expires_at``
-(epoch seconds). The login HTTP call itself lives in ``igpsport.py``; this
-module only persists the token and answers "is it still good?".
+(epoch seconds) plus ``region`` and ``member_id`` to prevent cross-region
+token reuse (CN and INTL share an auth server but different user databases).
+
+The login HTTP call itself lives in ``igpsport.py``; this module only persists
+the token and answers "is it still good?".
 """
 
 from __future__ import annotations
@@ -21,15 +24,26 @@ class Token:
     access_token: str
     refresh_token: str | None
     expires_at: float
+    region: str
+    member_id: str
 
     @classmethod
-    def from_login(cls, data: dict, now: float | None = None) -> Token:
+    def from_login(
+        cls,
+        data: dict,
+        *,
+        region: str,
+        member_id: str,
+        now: float | None = None,
+    ) -> Token:
         now = time.time() if now is None else now
         expires_in = float(data.get("expires_in", 0) or 0)
         return cls(
             access_token=data["access_token"],
             refresh_token=data.get("refresh_token"),
             expires_at=now + expires_in,
+            region=region,
+            member_id=member_id,
         )
 
     def is_expired(self, now: float | None = None) -> bool:
@@ -38,7 +52,11 @@ class Token:
 
 
 class TokenStore:
-    """Reads/writes the cached token JSON."""
+    """Reads/writes the cached token JSON.
+
+    Tokens missing ``region`` or ``member_id`` (pre-v0.7 cache) are treated as
+    invalid — load() returns None, forcing a fresh login.
+    """
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -53,6 +71,8 @@ class TokenStore:
                 access_token=raw["access_token"],
                 refresh_token=raw.get("refresh_token"),
                 expires_at=float(raw["expires_at"]),
+                region=raw["region"],
+                member_id=raw["member_id"],
             )
         except (KeyError, TypeError, ValueError):
             return None
