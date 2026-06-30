@@ -72,14 +72,39 @@ igpsport-mcp --setup
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
-| `IGPSPORT_USERNAME` | ✅ | iGPSport 账号(手机号) |
+| `IGPSPORT_USERNAME` | ✅ | iGPSport 账号(国服手机号 / 国际版邮箱) |
 | `IGPSPORT_PASSWORD` | ✅ | 密码 |
+| `IGPSPORT_REGION` | 选填 | 区域,默认 `cn`(国服 `app.igpsport.cn`);国际版用户填 `intl`(`app.igpsport.com`) |
 | `IGPSPORT_FTP` | 选填 | 功率阈值(瓦)。**不填会自动读取 iGPSport 账号里设置的 FTP**;填了则覆盖 |
 | `IGPSPORT_LTHR` | 选填 | 乳酸阈心率(bpm),用于心率区间与 hrTSS 兜底。**不填同样自动从 iGPSport 读取**;填了则覆盖 |
 | `IGPSPORT_CACHE_DIR` | 选填 | 缓存目录,默认 macOS `~/.cache/igpsport-mcp`、Windows `C:\Users\你\.cache\igpsport-mcp` |
 | `IGPSPORT_LOG_LEVEL` | 选填 | 默认 `INFO` |
 
 > FTP / LTHR 现在默认从你 iGPSport 账号的运动信息里自动读取(还会带出体重、最大心率),所以**通常无需手动填**。只有当你想用与 App 不同的阈值时,才设这两个环境变量来覆盖。若账号里也没设 FTP,则无法计算 IF / TSS / CTL / ATL / TSB —— 请到 iGPSport 里补上,或填 `IGPSPORT_FTP`。
+
+## 国际版支持
+
+通过 `IGPSPORT_REGION=intl` 切换到国际版(`app.igpsport.com`)。国际版与国服**账号不互通**,需在 `app.igpsport.com` 单独注册。
+
+**与国服的差异**:
+
+- 国际版无 WASM 签名,鉴权走纯 JWT,设计更简洁
+- **赛段功能不可用**(国际版赛段为 beta,列表为空)
+- 训练参数端点用 v2 路径、年度统计路径也不同(工具内部自动适配)
+- Workout 课程格式跨区域兼容,IR 编译层零改动
+
+配置示例:
+
+```bash
+# env 方式
+export IGPSPORT_REGION=intl
+export IGPSPORT_USERNAME=your_email@example.com
+export IGPSPORT_PASSWORD=your_password
+```
+
+或在 `--setup` 向导的第一步选择「2. 国际版」。
+
+> 国际版 Fit 文件的 OSS 存储在美国(`oss-us-west-1`),国内用户下载可能略慢。
 
 ## 接入 Claude
 
@@ -235,7 +260,7 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.igpsport-mcp"
 Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 ```
 
-**3. 从客户端配置里移除 `igpsport`**:Claude Desktop 删掉 `claude_desktop_config.json` 里 `mcpServers` 下的 `igpsport` 块;Claude Code 用 `claude mcp remove igpsport`;OpenClaw 用 `openclaw mcp remove igpsport`(或删掉 `~/.openclaw/openclaw.json` 里 `mcp.servers` 下的 `igpsport` 块)。
+**3. 从客户端配置里移除 `igpsport`**:Claude Desktop 删掉 `claude_desktop_config.json` 里 `mcpServers` 下的 `igpsport` 块;Claude Code 用 `claude mcp remove igpsport`;OpenClaw 用 `openclaw mcp unset igpsport`(或删掉 `~/.openclaw/openclaw.json` 里 `mcp.servers` 下的 `igpsport` 块)。
 
 > 用 `uvx igpsport-mcp` 一次性运行的没有「本体」需要卸载,只需做第 2、3 步即可。
 
@@ -306,6 +331,9 @@ A:iGPSport 改版可能导致失效,工具会抛出明确错误。欢迎到 [Iss
 
 **Q:支持跑步/其它码表吗?**
 A:不支持。本项目专注 iGPSport 骑行数据。
+
+**Q:国际版有什么不同?**
+A:国际版和国服账号不互通。国际版无赛段功能(处于 beta,列表为空),鉴权机制更简单(不需要 WASM 签名)。其余活动/训练课程/统计功能一致。详见「国际版支持」节。
 
 ## 开发
 

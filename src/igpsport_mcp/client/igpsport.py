@@ -1,10 +1,8 @@
-"""IGPSportClient: login, list activities, download FIT, segments.
+"""IGPSportClient: login, list activities, download FIT, segments, workouts.
 
-Maintains the 3 core activity endpoints (login / queryMyActivity /
-getDownloadUrl) plus 11 segment endpoints; activity analytics are parsed
-locally from the FIT file. Every request carries a WASM signature; authed
-requests also carry the JWT. Network errors retry 3x with exponential
-backoff.
+Maintains core endpoints for activity / segment / workout access. In CN mode
+every request carries a WASM signature; in international mode signing is
+skipped (pure JWT). Network errors retry 3x with exponential backoff.
 """
 
 from __future__ import annotations
@@ -22,6 +20,7 @@ from ..config import Config
 from ..exceptions import IGPSportAPIChangedError, LoginError
 from . import endpoints as ep
 from .auth import Token, TokenStore
+from .region import RegionProfile, get_profile
 from .signer import WasmSigner
 
 logger = logging.getLogger(__name__)
@@ -30,10 +29,13 @@ _MAX_RETRIES = 3
 _BACKOFF_BASE_S = 0.5
 
 # Header overrides that route a request through the iOS mobile signing gateway
-# (workout endpoints live under /service/mobile/api). See reverse-eng notes §5.1.
+# (CN workout endpoints live under /service/mobile/api, signed with iOS key).
+# In intl mode there is no signing, so these are never used.
 _IOS_HDR: dict[str, str] = {
-    "x-access-key": ep.IOS_ACCESS_KEY,
-    "qiwu-app-version": ep.IOS_APP_VERSION,
+    "x-access-key": "AKIDiOSApp2",
+    "qiwu-app-version": "8.07.18",
+    # Note: `_IOS_HDR` is only used in CN mode when signing is active;
+    # in intl mode signing is skipped entirely so this is never referenced.
 }
 
 
@@ -57,13 +59,16 @@ class IGPSportClient:
         signer: WasmSigner | None = None,
     ) -> None:
         self._config = config
-        self._http = http or httpx.Client(base_url=ep.API_BASE, timeout=30.0, verify=False)
+        self._profile: RegionProfile = get_profile(config.region)
+        self._http = http or httpx.Client(
+            base_url=self._profile.api_base, timeout=30.0, verify=False
+        )
         self._tokens = TokenStore(config.token_path)
         self._token: Token | None = None
-        # One armed signer per access-key (web vs iOS).
+        # Signers are only used in CN mode (WASM signing).
         self._signers: dict[str, WasmSigner] = {}
         if signer is not None:
-            self._signers[ep.ACCESS_KEY] = signer
+            self._signers[self._profile.access_key] = signer
 
     def close(self) -> None:
         self._http.close()
@@ -74,22 +79,20 @@ class IGPSportClient:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    # -- signing session ---------------------------------------------------
+    # -- signing session (CN only) -------------------------------------------
 
     def _get_signer(self, access_key: str) -> WasmSigner:
         """Return an armed signer for *access_key* (lazy + cached).
 
         Each access-key (``AKIDWebClient`` / ``AKIDiOSApp2``) gets its own
         ``/public/key`` handshake so the secret_key matches the key-id in the
-        request header.
+        request header. Only called in CN mode (intl never reaches here).
         """
         if access_key in self._signers:
             return self._signers[access_key]
 
         signer = WasmSigner()
-        # Per reverse-eng notes §5.1: iOS endpoints only swap x-access-key +
-        # qiwu-app-version; everything else (incl. x-platform) is identical.
-        overrides = _IOS_HDR if access_key == ep.IOS_ACCESS_KEY else {}
+        overrides = _IOS_HDR if access_key == "AKIDiOSApp2" else {}
         data = self._request_raw("GET", ep.PATH_PUBLIC_KEY, signed=False, **overrides)
         secret_key = data["data"]["secret_key"]
         signer.init_session_key(secret_key)
@@ -98,13 +101,25 @@ class IGPSportClient:
 
     def _signed_headers(
         self, method: str, full_path: str, body: str, jwt: str | None, **hdr_overrides: str
-    ) -> dict:
-        access_key = hdr_overrides.get("x-access-key", ep.ACCESS_KEY)
+    ) -> dict[str, str]:
+        """Build request headers, conditionally adding WASM signature headers."""
+
+        if not self._profile.signing:
+            # International: pure JWT, no WASM signing.
+            headers = ep.base_headers(profile=self._profile, **hdr_overrides)
+            if jwt:
+                headers["authorization"] = f"Bearer {jwt}"
+            if body:
+                headers["content-type"] = "application/json"
+            return headers
+
+        # CN: full WASM signing flow.
+        access_key = hdr_overrides.get("x-access-key", self._profile.access_key)
         signer = self._get_signer(access_key)
         timestamp = str(int(time.time()))
         nonce = str(uuid.uuid4())
         signature = signer.generate_signature(method, full_path, timestamp, nonce, body)
-        headers = ep.base_headers(**hdr_overrides)
+        headers = ep.base_headers(profile=self._profile, **hdr_overrides)
         headers.update({"x-timestamp": timestamp, "x-nonce": nonce, "x-signature": signature})
         if jwt:
             headers["authorization"] = f"Bearer {jwt}"
@@ -112,14 +127,14 @@ class IGPSportClient:
             headers["content-type"] = "application/json"
         return headers
 
-    # -- HTTP with retry ---------------------------------------------------
+    # -- HTTP with retry -----------------------------------------------------
 
     def _send(self, request: httpx.Request) -> httpx.Response:
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
                 return self._http.send(request)
-            except httpx.RequestError as exc:  # network-level errors only
+            except httpx.RequestError as exc:
                 last_exc = exc
                 if attempt < _MAX_RETRIES - 1:
                     time.sleep(_BACKOFF_BASE_S * (2**attempt))
@@ -142,7 +157,7 @@ class IGPSportClient:
         if signed:
             headers = self._signed_headers(method, full_path, body_str, jwt, **hdr_overrides)
         else:
-            headers = ep.base_headers(**hdr_overrides)
+            headers = ep.base_headers(profile=self._profile, **hdr_overrides)
         request = self._http.build_request(
             method,
             full_path,
@@ -173,11 +188,13 @@ class IGPSportClient:
             )
         return payload.get("data")
 
-    # -- auth --------------------------------------------------------------
+    # -- auth ----------------------------------------------------------------
 
     def login(self) -> Token:
         username, password = self._config.require_credentials()
-        body = json.dumps({"appId": ep.LOGIN_APP_ID, "username": username, "password": password})
+        body = json.dumps(
+            {"appId": self._profile.login_app_id, "username": username, "password": password}
+        )
         payload = self._request_raw("POST", ep.PATH_LOGIN, body=body)
         if payload.get("code") != 0:
             raise LoginError("Login failed, check IGPSPORT_USERNAME/PASSWORD")
@@ -196,13 +213,14 @@ class IGPSportClient:
         self._token = token
         return token.access_token
 
-    # -- core endpoints ----------------------------------------------------
+    # -- core endpoints ------------------------------------------------------
 
     def list_activities(self, page_no: int = 1, page_size: int = 20) -> list[dict[str, Any]]:
-        full_path = (
-            f"{ep.PATH_QUERY_ACTIVITY}?pageNo={page_no}&pageSize={page_size}"
-            "&reqType=0&sort=1&sortType=1"
-        )
+        """List activities. CN adds ``sortType=1``; intl omits it."""
+        params = f"pageNo={page_no}&pageSize={page_size}&reqType=0&sort=1"
+        if self._profile.key == "cn":
+            params += "&sortType=1"
+        full_path = f"{ep.PATH_QUERY_ACTIVITY}?{params}"
         data = self._request_business("GET", full_path, jwt=self._jwt())
         if isinstance(data, dict):
             rows = data.get("rows") or data.get("list") or []
@@ -235,6 +253,24 @@ class IGPSportClient:
         dest.write_bytes(content)
         return dest
 
+    def get_activity_detail(self, ride_id: str | int) -> dict[str, Any]:
+        """Get server-side activity detail (includes fitUrl, NP/IF/TSS).
+
+        Added for intl where ``queryActivityDetail`` directly returns ``fitUrl``,
+        but the endpoint also exists on CN.
+        """
+        full_path = ep.PATH_ACTIVITY_DETAIL.format(ride_id=ride_id)
+        return self._request_business("GET", full_path, jwt=self._jwt())
+
+    def get_activity_laps(self, ride_id: str | int) -> list[dict[str, Any]]:
+        """Get server-side lap data for an activity.
+
+        Discovered on intl; may also work on CN (untested).
+        """
+        full_path = ep.PATH_ACTIVITY_LAP.format(ride_id=ride_id)
+        result = self._request_business("GET", full_path, jwt=self._jwt())
+        return list(result) if isinstance(result, list) else []
+
     def get_member_statistics(
         self,
         *,
@@ -246,45 +282,69 @@ class IGPSportClient:
         """Server-side member statistics: totals, monthly axis, milestones, PRs.
 
         ``time`` is the anchor date (YYYY-MM-DD); ``stat_type`` 2 = yearly view.
-        The query-string order mirrors the official client because it is part of
-        the signed payload — do not reorder.
+        Query-string order mirrors the official client — do not reorder.
         """
-        full_path = (
-            f"{ep.PATH_MEMBER_STATISTICS}?distanceUnit={distance_unit}"
-            f"&time={time}&type={stat_type}&bigSportType={big_sport_type}"
-        )
+        p = self._profile
+        stats_path = p.resolve_path(ep.PATH_MEMBER_STATISTICS, p.path_member_statistics)
+
+        if p.key == "intl":
+            # International: PascalCase params, no bigSportType.
+            full_path = (
+                f"{stats_path}?DistanceUnit={distance_unit}"
+                f"&Time={time}&Type={stat_type}"
+            )
+        else:
+            # CN: camelCase params with bigSportType.
+            full_path = (
+                f"{stats_path}?distanceUnit={distance_unit}"
+                f"&time={time}&type={stat_type}&bigSportType={big_sport_type}"
+            )
         return self._request_business("GET", full_path, jwt=self._jwt())
 
     def get_user_interval_info(self) -> dict[str, Any]:
         """Athlete training params: FTP/LTHR/maxHR/weight + configured zone tables."""
-        return self._request_business("GET", ep.PATH_USER_INTERVAL_INFO, jwt=self._jwt())
+        p = self._profile
+        path = p.resolve_path(ep.PATH_USER_INTERVAL_INFO, p.path_user_interval_info)
+        return self._request_business("GET", path, jwt=self._jwt())
 
-    # -- segment (赛段) endpoints ------------------------------------------
+    # -- segment (赛段) endpoints --------------------------------------------
+
+    def _require_segments(self) -> None:
+        if not self._profile.segments_available:
+            raise IGPSportAPIChangedError(
+                "Segments are not available in the international version "
+                "(the feature is in beta and the segment list is empty)."
+            )
 
     def list_segments_collected(
         self, page_no: int = 1, page_size: int = 20
     ) -> list[dict[str, Any]]:
         """List segments the user has collected (starred)."""
+        self._require_segments()
         full_path = f"{ep.PATH_SEGMENT_MY_COLLECT}?pageNo={page_no}&pageSize={page_size}"
         return _extract_rows(self._request_business("GET", full_path, jwt=self._jwt()))
 
     def list_segments_created(self, page_no: int = 1, page_size: int = 20) -> list[dict[str, Any]]:
         """List segments the user has created."""
+        self._require_segments()
         full_path = f"{ep.PATH_SEGMENT_MY_CREATE}?pageNo={page_no}&pageSize={page_size}"
         return _extract_rows(self._request_business("GET", full_path, jwt=self._jwt()))
 
     def get_segment_detail(self, segments_id: str) -> dict[str, Any]:
         """Get segment detail: name, distance, elevation, grade, etc."""
+        self._require_segments()
         full_path = ep.PATH_SEGMENT_DETAIL.format(segments_id=segments_id)
         return self._request_business("GET", full_path, jwt=self._jwt())
 
     def get_segment_overview(self, segments_id: str) -> dict[str, Any]:
         """Get segment overview (可能含 KOM 时间)."""
+        self._require_segments()
         full_path = ep.PATH_SEGMENT_OVERVIEW.format(segments_id=segments_id)
         return self._request_business("GET", full_path, jwt=self._jwt())
 
     def get_segment_score_check(self, segments_id: str) -> dict[str, Any]:
         """Check your personal record on a segment."""
+        self._require_segments()
         full_path = ep.PATH_SEGMENT_SCORE_CHECK.format(segments_id=segments_id)
         return self._request_business("GET", full_path, jwt=self._jwt())
 
@@ -292,6 +352,7 @@ class IGPSportClient:
         self, segments_id: str, *, page_no: int = 1, page_size: int = 30, query_type: int = 1
     ) -> dict[str, Any]:
         """Get segment leaderboard (rank list + personal rank)."""
+        self._require_segments()
         full_path = (
             f"{ep.PATH_SEGMENT_RANK}?pageNo={page_no}&pageSize={page_size}"
             f"&segmentsId={segments_id}&queryType={query_type}"
@@ -300,11 +361,13 @@ class IGPSportClient:
 
     def get_segment_top_records(self, segments_id: str) -> dict[str, Any]:
         """Get fastest times + KOM/QOM on a segment."""
+        self._require_segments()
         full_path = ep.PATH_SEGMENT_TOP_RECORDS.format(segments_id=segments_id)
         return self._request_business("GET", full_path, jwt=self._jwt())
 
     def get_segment_recent_records(self, segments_id: str) -> dict[str, Any]:
         """Get recent efforts on a segment."""
+        self._require_segments()
         full_path = ep.PATH_SEGMENT_RECENT_RECORDS.format(segments_id=segments_id)
         return self._request_business("GET", full_path, jwt=self._jwt())
 
@@ -312,6 +375,7 @@ class IGPSportClient:
         self, segments_id: str, *, page_no: int = 1, page_size: int = 10, sort_type: int = 1
     ) -> list[dict[str, Any]]:
         """List comments on a segment."""
+        self._require_segments()
         full_path = (
             f"{ep.PATH_SEGMENT_NOTE_LIST}?segmentsId={segments_id}"
             f"&pageNo={page_no}&pageSize={page_size}&sortType={sort_type}"
@@ -322,6 +386,7 @@ class IGPSportClient:
         self, segments_id: str, *, page_no: int = 1, page_size: int = 10
     ) -> list[dict[str, Any]]:
         """List my comments on a segment."""
+        self._require_segments()
         full_path = (
             f"{ep.PATH_SEGMENT_NOTE_MY}?segmentsId={segments_id}"
             f"&pageNo={page_no}&pageSize={page_size}"
@@ -339,6 +404,7 @@ class IGPSportClient:
         segments_type: int = -1,
     ) -> dict[str, Any]:
         """Query segments visible in a map bounding box."""
+        self._require_segments()
         body = json.dumps(
             {
                 "maxLat": max_lat,
@@ -351,28 +417,19 @@ class IGPSportClient:
         )
         return self._request_business("POST", ep.PATH_SEGMENT_MAP, body=body, jwt=self._jwt())
 
-    # -- workout (训练课程) endpoints (mobile API) -------------------------
+    # -- workout (训练课程) endpoints (mobile API) ---------------------------
 
-    # WorkOut endpoints were *captured* from the iOS App, but the server accepts
-    # the default web access-key for them (same JWT). Web key is the verified
-    # working config — do NOT switch to ``_IOS_HDR`` (breaks the upload).
-    # ``_IOS_HDR`` / the iOS signer branch are kept as a fallback only.
-    _WO_HDR: ClassVar[dict[str, str]] = {}
+    _WO_HDR: ClassVar[dict[str, str]] = {}  # workout uses web access-key (or none in intl)
 
     def list_workouts(self) -> list[dict[str, Any]]:
-        """List all custom workouts belonging to the user.
-
-        The server returns a flat array (pagination is ignored — all items
-        come back in one response). Each item has ``id``, ``title``,
-        ``totalTime``, ``img``, ``grade``.
-        """
-        full_path = f"{ep.PATH_WORKOUT_LIST}?pageNo=1&pageSize=200"
-        result = self._request_business(
-            "GET",
-            full_path,
-            jwt=self._jwt(),
-            **self._WO_HDR,
-        )
+        """List all custom workouts belonging to the user."""
+        p = self._profile
+        path = p.resolve_path(ep.PATH_WORKOUT_LIST, p.path_workout_list)
+        if p.key == "intl":
+            full_path = f"{path}?PageIndex=1&PageSize=200"
+        else:
+            full_path = f"{path}?pageNo=1&pageSize=200"
+        result = self._request_business("GET", full_path, jwt=self._jwt(), **self._WO_HDR)
         return list(result) if isinstance(result, list) else []
 
     def create_workout(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -389,20 +446,9 @@ class IGPSportClient:
     def get_workout_detail(self, workout_id: int) -> dict[str, Any]:
         """Get full detail (including structure) of a workout."""
         full_path = f"{ep.PATH_WORKOUT_DETAIL}?id={workout_id}"
-        return self._request_business(
-            "GET",
-            full_path,
-            jwt=self._jwt(),
-            **self._WO_HDR,
-        )
+        return self._request_business("GET", full_path, jwt=self._jwt(), **self._WO_HDR)
 
     def delete_workout(self, workout_id: int) -> None:
         """Delete a custom workout."""
         full_path = f"{ep.PATH_WORKOUT_DELETE}?id={workout_id}"
-        self._request_business(
-            "POST",
-            full_path,
-            body="{}",
-            jwt=self._jwt(),
-            **self._WO_HDR,
-        )
+        self._request_business("POST", full_path, body="{}", jwt=self._jwt(), **self._WO_HDR)

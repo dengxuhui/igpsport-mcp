@@ -18,7 +18,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - ❌ **不加 Web UI / dashboard**——走纯 MCP stdio,复用 LLM 客户端的对话界面。
 - ❌ **不用 TypeScript**——选 Python 是因为 `fitparse` / `pandas` / 官方 `mcp` SDK。
-- ❌ **不做** remote MCP、多账号、导出 .fit/.zwo、webhook 实时同步、国际版、其它码表 provider。
+- ❌ **不做** remote MCP、多账号、导出 .fit/.zwo、webhook 实时同步、其它码表 provider。
+- ⚠️ **双区域以 profile 切换,不分叉第二套 client**。CN/INTL 差异收敛在 `client/region.py` 的 `RegionProfile` dataclass 里(host / origin / signing / 路径 override)。实现方案见 `docs/intl-support-plan.md`。
 - ⚠️ **派生指标公式严格按权威定义实现**,不要自己发挥。NP/IF/TSS/CTL/ATL/TSB 都有公认公式,且必须有单元测试验证(与 Strava/iGPSport 显示误差 < 2%)。
 - ⚠️ **Compact format 是必需项不是优化项**:stream 输出永远是 `{channel: {unit, values: [...]}}` 的裸数组形式,**绝不**返回 `[{time, power}, ...]` 这种逐点对象。从第一行 stream 代码就遵守。
 - ⚠️ **训练课程(workout)是唯一的写入特例**(原 v1 不做训练计划生成的红线已撤销,它是工具链闭合的必要环节)。但写入路径要克制:① LLM 面向的是 `workout/ir.py` 的人类单位 IR,编译到 iGPSport 原生格式;② 破坏性操作(`delete_workout`)必须有 `confirm` 门槛,默认只返回预览;③ workout 这 3 个 mobile endpoint **实测用默认 web access-key 即可上传**(`_WO_HDR={}`),iOS 签名(`AKIDiOSApp2`,`_IOS_HDR`)只是保留的备用通道,**不要默认切过去**(会导致上传失败),也不要把它扩散成「逆向更多 App 接口」的借口。
@@ -40,6 +41,8 @@ server 内部分层(自上而下):
 
 **关键洞察**:拿到 FIT 文件后,所有 stream / 派生指标 / 圈数据全部本地解析,跟 iGPSport 服务器零交互。因此读取链路只需维护极少数核心 endpoint(登录、活动列表、FIT 下载)。这是抗 API 漂移的设计核心,不要为了"省事"去逆向更多详情/统计接口。workout 是有意为之的写入特例(3 个 mobile endpoint,实测复用 web 签名),除此之外不扩张 API 面。
 
+**区域差异**:国服 `prod.zh.igpsport.com` 需要 WASM 签名(`x-signature`),国际版 `prod.en.igpsport.com` 是纯 JWT 鉴权(无签名)。差异全部收敛在 `client/region.py` 的 `RegionProfile` 里,client 构造时按 `Config.region` 选择 profile。国际版赛段功能不可用(`segments_available=False`)。
+
 **数据流**:工具优先查 SQLite 缓存,miss 才打 API;FIT 文件本地永久缓存;同一活动的后续请求零 API 调用。
 
 ## 16 个 MCP Tool
@@ -47,8 +50,8 @@ server 内部分层(自上而下):
 ### 活动类(8 个)
 `list_activities`、`get_activity_summary`(最高频,务必准且快)、`get_activity_streams`(强制降采样+通道选择)、`get_activity_laps`、`get_athlete_profile`、`get_athlete_stats`、`compare_activities`、`analyze_training_load`(CTL/ATL/TSB 趋势,杀手 query)。
 
-### 赛段类(3 个)
-`list_segments_collected`(我收藏的赛段)、`get_segment_detail`(赛段详情+我的PR+KOM+最快榜)、`get_segment_rank`(排行榜)。
+### 赛段类(3 个,仅国服)
+`list_segments_collected`(我收藏的赛段)、`get_segment_detail`(赛段详情+我的PR+KOM+最快榜)、`get_segment_rank`(排行榜)。国际版无赛段功能。
 
 ### 统计类(1 个)
 `get_member_statistics`(官方年度统计 + 个人最佳)。
@@ -71,7 +74,9 @@ server 内部分层(自上而下):
 ## 配置(env vars)
 
 必填:`IGPSPORT_USERNAME`、`IGPSPORT_PASSWORD`。
-可选:`IGPSPORT_FTP`(功率阈值,瓦)、`IGPSPORT_LTHR`(乳酸阈心率)、`IGPSPORT_CACHE_DIR`(默认 `~/.cache/igpsport-mcp`)、`IGPSPORT_LOG_LEVEL`。
+可选:`IGPSPORT_REGION`(默认 `cn`,可选 `intl` 国际版)、`IGPSPORT_FTP`(功率阈值,瓦)、`IGPSPORT_LTHR`(乳酸阈心率)、`IGPSPORT_CACHE_DIR`(默认 `~/.cache/igpsport-mcp`)、`IGPSPORT_LOG_LEVEL`。
+
+> 国服与国际版账号不互通。国际版用户需在 `app.igpsport.com` 注册账号,设 `IGPSPORT_REGION=intl`。
 
 缓存目录布局:`token.json`(token + expires_at)、`activities.db`(SQLite)、`fit/{ride_id}.fit`。
 

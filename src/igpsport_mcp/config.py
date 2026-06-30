@@ -26,7 +26,10 @@ from .exceptions import ConfigError
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "igpsport-mcp"
 DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_REGION = "cn"
 CONFIG_FILE = Path.home() / ".igpsport-mcp" / "config.json"
+
+VALID_REGIONS = ("cn", "intl")
 
 
 # ── config file persistence ────────────────────────────────────────────
@@ -45,12 +48,19 @@ def _load_config_file() -> dict[str, str | None]:
             "password": str(data.get("password", "")).strip() or None,
             "ftp": str(data.get("ftp", "")).strip() or None,
             "lthr": str(data.get("lthr", "")).strip() or None,
+            "region": str(data.get("region", "")).strip() or None,
         }
     except (json.JSONDecodeError, OSError, ValueError):
         return {}
 
 
-def save_config_file(username: str, password: str, ftp: str = "", lthr: str = "") -> Path:
+def save_config_file(
+    username: str,
+    password: str,
+    ftp: str = "",
+    lthr: str = "",
+    region: str = "",
+) -> Path:
     """Save credentials to ``~/.igpsport-mcp/config.json`` with owner-only permissions.
 
     Returns the path written so callers can display it.
@@ -61,6 +71,8 @@ def save_config_file(username: str, password: str, ftp: str = "", lthr: str = ""
         payload["ftp"] = ftp
     if lthr:
         payload["lthr"] = lthr
+    if region:
+        payload["region"] = region
     CONFIG_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     # chmod 600 — owner read/write only
     CONFIG_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)
@@ -80,8 +92,19 @@ def _prompt_credentials(env: Mapping[str, str] | None = None) -> dict[str, str |
     print("\n🔧 igpsport-mcp 首次配置\n")
     print("需要你的 iGPSport 账号信息(仅保存在本地,不上传):\n")
 
-    username = input("  手机号: ").strip() or env.get("IGPSPORT_USERNAME")
-    password = getpass("  密码:   ").strip() or env.get("IGPSPORT_PASSWORD")
+    # -- region selection ----------------------------------------------------
+    env_region = env.get("IGPSPORT_REGION", "").strip().lower()
+    if env_region in VALID_REGIONS:
+        region = env_region
+    else:
+        print("  选择你的 iGPSport 账号区域:")
+        print("    1. 国服 (app.igpsport.cn)           ← 中国区账号")
+        print("    2. 国际版 (app.igpsport.com)        ← 全球区账号\n")
+        choice = input("  请输入 1 或 2 (默认 1): ").strip()
+        region = "intl" if choice == "2" else "cn"
+
+    username = input("  手机号/邮箱: ").strip() or env.get("IGPSPORT_USERNAME")
+    password = getpass("  密码:        ").strip() or env.get("IGPSPORT_PASSWORD")
 
     print("\n  以下两项可直接回车跳过——不填会自动读取你 iGPSport 账号里的设置:\n")
 
@@ -99,6 +122,7 @@ def _prompt_credentials(env: Mapping[str, str] | None = None) -> dict[str, str |
         "password": password or None,
         "ftp": ftp,
         "lthr": lthr,
+        "region": region,
     }
 
 
@@ -115,6 +139,7 @@ def run_setup_wizard(exe_path: str = "igpsport-mcp") -> None:
         password=creds["password"],
         ftp=creds.get("ftp") or "",
         lthr=creds.get("lthr") or "",
+        region=creds.get("region") or "",
     )
     print(f"✅ 配置已保存到 {saved}\n")
     print_mcp_config_snippet(exe_path)
@@ -160,6 +185,7 @@ class Config:
     password: str | None
     ftp: int | None
     lthr: int | None
+    region: str
     cache_dir: Path
     log_level: str
 
@@ -213,6 +239,8 @@ def load_config(
     password: str | None = env.get("IGPSPORT_PASSWORD") or None
     ftp: int | None = _env_int(env, "IGPSPORT_FTP")
     lthr: int | None = _env_int(env, "IGPSPORT_LTHR")
+    region_env = env.get("IGPSPORT_REGION", "").strip().lower()
+    region: str = region_env if region_env in VALID_REGIONS else ""
 
     # Layer 2: config file (fallback for missing values)
     file_creds = _load_config_file()
@@ -226,6 +254,8 @@ def load_config(
     if lthr is None and file_creds.get("lthr"):
         with contextlib.suppress(ValueError, TypeError):
             lthr = int(file_creds["lthr"])
+    if not region and file_creds.get("region"):
+        region = file_creds["region"]
 
     # Layer 3: interactive (only when requested or auto-detected tty)
     should_prompt = interactive or (
@@ -243,6 +273,8 @@ def load_config(
         if creds.get("lthr") and lthr is None:
             with contextlib.suppress(ValueError, TypeError):
                 lthr = int(creds["lthr"])
+        if creds.get("region") and not region:
+            region = creds["region"]
         # Save for next time
         if username and password:
             save_config_file(
@@ -250,6 +282,7 @@ def load_config(
                 password=password,
                 ftp=str(ftp) if ftp else "",
                 lthr=str(lthr) if lthr else "",
+                region=region or "",
             )
 
     # Common
@@ -257,11 +290,15 @@ def load_config(
     cache_dir = Path(cache_dir_raw).expanduser() if cache_dir_raw else DEFAULT_CACHE_DIR
     log_level = env.get("IGPSPORT_LOG_LEVEL") or DEFAULT_LOG_LEVEL
 
+    if not region:
+        region = DEFAULT_REGION
+
     return Config(
         username=username,
         password=password,
         ftp=ftp,
         lthr=lthr,
+        region=region,
         cache_dir=cache_dir,
         log_level=log_level,
     )
