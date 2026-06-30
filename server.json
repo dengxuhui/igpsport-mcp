@@ -1,54 +1,57 @@
 {
-  "$schema": "https://modelcontextprotocol.io/schemas/server.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.dengxuhui/igpsport-mcp",
-  "title": "iGPSport MCP",
-  "description": "Local MCP server exposing iGPSport cycling data to LLM clients. Derived training metrics (NP/IF/TSS/CTL/ATL/TSB) are computed server-side, plus workout generation and push to head unit.",
-  "version": "0.7.0",
+  "description": "iGPSport cycling data with training metrics (NP/IF/TSS/CTL/ATL/TSB) and workout generation",
   "repository": {
     "url": "https://github.com/dengxuhui/igpsport-mcp",
     "source": "github"
   },
+  "version": "0.7.0",
   "packages": [
     {
-      "registry_type": "pypi",
+      "registryType": "pypi",
       "identifier": "igpsport-mcp",
       "version": "0.7.0",
       "transport": {
-        "type": "stdio",
-        "command": "uvx",
-        "arguments": ["igpsport-mcp"]
+        "type": "stdio"
       },
-      "environment_variables": [
+      "environmentVariables": [
         {
-          "name": "IGPSPORT_USERNAME",
-          "description": "iGPSport account (phone number for CN / email for international)",
-          "required": true
+          "description": "iGPSport account (phone for CN, email for intl)",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true,
+          "name": "IGPSPORT_USERNAME"
         },
         {
-          "name": "IGPSPORT_PASSWORD",
           "description": "Password",
-          "required": true
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true,
+          "name": "IGPSPORT_PASSWORD"
         },
         {
-          "name": "IGPSPORT_REGION",
           "description": "Region: cn (default) or intl",
-          "required": false
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "IGPSPORT_REGION"
         },
         {
-          "name": "IGPSPORT_FTP",
           "description": "Functional Threshold Power in watts",
-          "required": false
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "IGPSPORT_FTP"
         },
         {
-          "name": "IGPSPORT_LTHR",
           "description": "Lactate Threshold Heart Rate in bpm",
-          "required": false
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "IGPSPORT_LTHR"
         }
       ]
     }
-  ],
-  "categories": ["sports", "fitness", "data-analysis"],
-  "license": "MIT",
-  "homepage": "https://github.com/dengxuhui/igpsport-mcp",
-  "icon": null
+  ]
 }
