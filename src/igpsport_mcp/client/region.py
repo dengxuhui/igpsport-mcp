@@ -95,7 +95,5 @@ REGISTRY: dict[str, RegionProfile] = {"cn": CN, "intl": INTL}
 def get_profile(region: str) -> RegionProfile:
     """Look up a profile by key; raises ValueError for unknown regions."""
     if region not in REGISTRY:
-        raise ValueError(
-            f"Unknown region {region!r}, expected one of {list(REGISTRY)}"
-        )
+        raise ValueError(f"Unknown region {region!r}, expected one of {list(REGISTRY)}")
     return REGISTRY[region]

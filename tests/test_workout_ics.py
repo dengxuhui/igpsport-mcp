@@ -6,8 +6,8 @@ from igpsport_mcp.workout.ics import build_calendar
 from igpsport_mcp.workout.ir import compile_workout
 
 
-def _artifact(ir, *, ftp=None):
-    return build_calendar(ir, compile_workout(ir, ftp=ftp))
+def _artifact(ir, *, ftp=None, lang="zh"):
+    return build_calendar(ir, compile_workout(ir, ftp=ftp), lang=lang)
 
 
 class TestBuildCalendar:
@@ -115,3 +115,93 @@ class TestBuildCalendar:
         }
         cal = _artifact(ir, ftp=250)
         assert "Threshold" in cal["description"]
+
+
+class TestBuildCalendarEnglish:
+    """Verify that ``lang="en"`` produces English labels and format strings."""
+
+    def test_english_intensity_labels(self):
+        ir = {
+            "title": "Test Session",
+            "steps": [
+                {"name": "WU", "intensity": "warmup", "duration": {"type": "time", "value": 300}},
+                {"name": "MS", "intensity": "active", "duration": {"type": "time", "value": 600}},
+                {"name": "RI", "intensity": "rest", "duration": {"type": "time", "value": 60}},
+                {"name": "CD", "intensity": "cooldown", "duration": {"type": "time", "value": 300}},
+            ],
+        }
+        cal = _artifact(ir, lang="en")
+        desc = cal["description"]
+        assert "Warmup" in desc
+        assert "Main Set" in desc
+        assert "Rest" in desc
+        assert "Cooldown" in desc
+
+    def test_english_summary_format(self):
+        ir = {
+            "title": "Easy Spin",
+            "steps": [
+                {"name": "x", "intensity": "active", "duration": {"type": "time", "value": 2400}},
+            ],
+        }
+        cal = _artifact(ir, lang="en")
+        assert "1 steps" in cal["summary"]
+        assert "~40 min" in cal["summary"]
+
+    def test_english_repeat_label(self):
+        ir = {
+            "title": "Intervals",
+            "steps": [
+                {
+                    "type": "repeat",
+                    "times": 3,
+                    "steps": [
+                        {
+                            "name": "On",
+                            "intensity": "active",
+                            "duration": {"type": "time", "value": 60},
+                        },
+                        {
+                            "name": "Off",
+                            "intensity": "rest",
+                            "duration": {"type": "time", "value": 30},
+                        },
+                    ],
+                }
+            ],
+        }
+        cal = _artifact(ir, lang="en")
+        assert "Repeat 3x" in cal["description"]
+
+    def test_english_lap_button(self):
+        ir = {
+            "title": "T",
+            "steps": [
+                {"name": "x", "intensity": "active", "duration": {"type": "lap_button"}},
+            ],
+        }
+        cal = _artifact(ir, lang="en")
+        assert "Lap button" in cal["description"]
+
+    def test_english_target_labels(self):
+        ir = {
+            "title": "T",
+            "steps": [
+                {
+                    "name": "S",
+                    "intensity": "active",
+                    "duration": {"type": "time", "value": 60},
+                    "target": {"type": "power_zone", "value": "Z3"},
+                },
+                {
+                    "name": "H",
+                    "intensity": "active",
+                    "duration": {"type": "time", "value": 60},
+                    "target": {"type": "hr_custom", "min": 140, "max": 160},
+                },
+            ],
+        }
+        cal = _artifact(ir, lang="en")
+        desc = cal["description"]
+        assert "Power Zone" in desc
+        assert "HR" in desc

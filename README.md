@@ -63,6 +63,7 @@ igpsport-mcp --setup
 | `igpsport-mcp --setup` | 交互式配置向导:填手机号/密码,存到本地 config.json |
 | `igpsport-mcp --mcp-config` | 打印可直接粘贴的 MCP 客户端配置 |
 | `igpsport-mcp --check` | 实际登录一次,验证凭证是否可用(账号会脱敏显示) |
+| `igpsport-mcp --lang en\|zh` | 设置输出语言(也可通过 `IGPSPORT_LANG` 环境变量;默认 `zh`) |
 | `igpsport-mcp --version` | 打印版本号 |
 | `igpsport-mcp --help` | 显示帮助 |
 
@@ -78,6 +79,7 @@ igpsport-mcp --setup
 | `IGPSPORT_FTP` | 选填 | 功率阈值(瓦)。**不填会自动读取 iGPSport 账号里设置的 FTP**;填了则覆盖 |
 | `IGPSPORT_LTHR` | 选填 | 乳酸阈心率(bpm),用于心率区间与 hrTSS 兜底。**不填同样自动从 iGPSport 读取**;填了则覆盖 |
 | `IGPSPORT_CACHE_DIR` | 选填 | 缓存目录,默认 macOS `~/.cache/igpsport-mcp`、Windows `C:\Users\你\.cache\igpsport-mcp` |
+| `IGPSPORT_LANG` | 选填 | 输出语言,默认 `zh`(中文);可选 `en`(英文) |
 | `IGPSPORT_LOG_LEVEL` | 选填 | 默认 `INFO` |
 
 > FTP / LTHR 现在默认从你 iGPSport 账号的运动信息里自动读取(还会带出体重、最大心率),所以**通常无需手动填**。只有当你想用与 App 不同的阈值时,才设这两个环境变量来覆盖。若账号里也没设 FTP,则无法计算 IF / TSS / CTL / ATL / TSB —— 请到 iGPSport 里补上,或填 `IGPSPORT_FTP`。

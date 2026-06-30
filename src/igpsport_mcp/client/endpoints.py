@@ -24,18 +24,10 @@ API_BASE = _ENV_API_BASE or "https://prod.zh.igpsport.com"
 
 PATH_PUBLIC_KEY = "/service/edge-core/api/public/key"  # unsigned handshake
 PATH_LOGIN = "/service/auth/account/login"
-PATH_QUERY_ACTIVITY = (
-    "/service/web-gateway/web-analyze/activity/queryMyActivity"
-)
-PATH_DOWNLOAD_URL = (
-    "/service/web-gateway/web-analyze/activity/getDownloadUrl/{ride_id}"
-)
-PATH_ACTIVITY_DETAIL = (
-    "/service/web-gateway/web-analyze/activity/queryActivityDetail/{ride_id}"
-)
-PATH_ACTIVITY_LAP = (
-    "/service/web-gateway/web-analyze/activity/queryActivityLap/{ride_id}"
-)
+PATH_QUERY_ACTIVITY = "/service/web-gateway/web-analyze/activity/queryMyActivity"
+PATH_DOWNLOAD_URL = "/service/web-gateway/web-analyze/activity/getDownloadUrl/{ride_id}"
+PATH_ACTIVITY_DETAIL = "/service/web-gateway/web-analyze/activity/queryActivityDetail/{ride_id}"
+PATH_ACTIVITY_LAP = "/service/web-gateway/web-analyze/activity/queryActivityLap/{ride_id}"
 
 # Member statistics / personal bests (年度统计 + 我的成就).
 PATH_MEMBER_STATISTICS = "/service/sportg/sporth/memberRecordPlus/getMemberDataStatisticsV4"

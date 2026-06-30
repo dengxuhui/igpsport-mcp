@@ -507,7 +507,7 @@ class IGPSportService:
         if with_calendar:
             from ..workout.ics import build_calendar
 
-            calendar = build_calendar(workout_ir, compiled)
+            calendar = build_calendar(workout_ir, compiled, lang=self._config.lang)
 
         if dry_run:
             out: dict[str, Any] = {"success": True, "dry_run": True, "compiled": compiled}

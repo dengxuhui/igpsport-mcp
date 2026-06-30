@@ -14,6 +14,7 @@ def test_defaults_when_env_empty():
     assert cfg.lthr is None
     assert cfg.cache_dir == DEFAULT_CACHE_DIR
     assert cfg.log_level == "INFO"
+    assert cfg.lang == "zh"
 
 
 def test_reads_all_fields():
@@ -50,3 +51,27 @@ def test_require_credentials_raises_when_missing():
 def test_invalid_int_raises():
     with pytest.raises(ConfigError):
         load_config({"IGPSPORT_FTP": "abc"})
+
+
+class TestLangConfig:
+    def test_lang_defaults_to_zh(self):
+        cfg = load_config({})
+        assert cfg.lang == "zh"
+
+    def test_lang_from_env(self):
+        cfg = load_config({"IGPSPORT_LANG": "en"})
+        assert cfg.lang == "en"
+
+    def test_lang_invalid_falls_back_to_zh(self):
+        cfg = load_config({"IGPSPORT_LANG": "de"})
+        assert cfg.lang == "zh"
+
+    def test_lang_parameter_overrides_env(self):
+        cfg = load_config({"IGPSPORT_LANG": "zh"}, lang="en")
+        assert cfg.lang == "en"
+
+    def test_lang_region_respected(self):
+        """Verify region=cn still reads correctly alongside lang."""
+        cfg = load_config({"IGPSPORT_REGION": "cn", "IGPSPORT_LANG": "en"})
+        assert cfg.region == "cn"
+        assert cfg.lang == "en"

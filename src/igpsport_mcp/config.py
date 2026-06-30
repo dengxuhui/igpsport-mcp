@@ -23,6 +23,8 @@ from getpass import getpass
 from pathlib import Path
 
 from .exceptions import ConfigError
+from .i18n import supported as _lang_supported
+from .i18n import t as _t
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "igpsport-mcp"
 DEFAULT_LOG_LEVEL = "INFO"
@@ -82,39 +84,43 @@ def save_config_file(
 # ── interactive prompt ─────────────────────────────────────────────────
 
 
-def _prompt_credentials(env: Mapping[str, str] | None = None) -> dict[str, str | None]:
+def _prompt_credentials(
+    env: Mapping[str, str] | None = None,
+    *,
+    lang: str = "zh",
+) -> dict[str, str | None]:
     """Interactive terminal wizard for first-time credential setup.
 
     Returns a dict matching ``_load_config_file()`` keys so the result can
     feed directly into ``Config`` construction.
     """
     env = env or os.environ
-    print("\n🔧 igpsport-mcp 首次配置\n")
-    print("需要你的 iGPSport 账号信息(仅保存在本地,不上传):\n")
+    t = lambda key, **kw: _t(key, lang, **kw)  # noqa: E731
+
+    print(t("setup_banner"))
+    print(t("setup_desc"))
 
     # -- region selection ----------------------------------------------------
     env_region = env.get("IGPSPORT_REGION", "").strip().lower()
     if env_region in VALID_REGIONS:
         region = env_region
     else:
-        print("  选择你的 iGPSport 账号区域:")
-        print("    1. 国服 (app.igpsport.cn)           ← 中国区账号")
-        print("    2. 国际版 (app.igpsport.com)        ← 全球区账号\n")
-        choice = input("  请输入 1 或 2 (默认 1): ").strip()
+        print(t("setup_region_prompt"))
+        print(t("setup_region_option_cn"))
+        print(t("setup_region_option_intl"))
+        choice = input(t("setup_region_input")).strip()
         region = "intl" if choice == "2" else "cn"
 
-    username = input("  手机号/邮箱: ").strip() or env.get("IGPSPORT_USERNAME")
-    password = getpass("  密码:        ").strip() or env.get("IGPSPORT_PASSWORD")
+    username = input(t("setup_username_prompt")).strip() or env.get("IGPSPORT_USERNAME")
+    password = getpass(t("setup_password_prompt")).strip() or env.get("IGPSPORT_PASSWORD")
 
-    print("\n  以下两项可直接回车跳过——不填会自动读取你 iGPSport 账号里的设置:\n")
+    print(t("setup_optional_hint"))
 
     default_ftp = env.get("IGPSPORT_FTP", "")
-    ftp_prompt = f"  FTP 功率阈值/瓦,即 1 小时能维持的最大功率 (可选,回车跳过) [{default_ftp}]: "
-    ftp = input(ftp_prompt).strip() or default_ftp or None
+    ftp = input(t("setup_ftp_prompt", default=default_ftp)).strip() or default_ftp or None
 
     default_lthr = env.get("IGPSPORT_LTHR", "")
-    lthr_prompt = f"  LTHR 乳酸阈心率/bpm,高强度时的临界心率 (可选,回车跳过) [{default_lthr}]: "
-    lthr = input(lthr_prompt).strip() or default_lthr or None
+    lthr = input(t("setup_lthr_prompt", default=default_lthr)).strip() or default_lthr or None
 
     print()  # blank line before confirmation
     return {
@@ -126,12 +132,13 @@ def _prompt_credentials(env: Mapping[str, str] | None = None) -> dict[str, str |
     }
 
 
-def run_setup_wizard(exe_path: str = "igpsport-mcp") -> None:
+def run_setup_wizard(exe_path: str = "igpsport-mcp", *, lang: str = "zh") -> None:
     """Full setup wizard: prompt → save → print MCP config snippet."""
-    creds = _prompt_credentials()
+    t = lambda key, **kw: _t(key, lang, **kw)  # noqa: E731
+    creds = _prompt_credentials(lang=lang)
 
     if not creds["username"] or not creds["password"]:
-        print("❌ 手机号和密码不能为空,配置未保存。请重新运行。")
+        print(t("setup_empty_credentials"))
         return
 
     saved = save_config_file(
@@ -141,8 +148,8 @@ def run_setup_wizard(exe_path: str = "igpsport-mcp") -> None:
         lthr=creds.get("lthr") or "",
         region=creds.get("region") or "",
     )
-    print(f"✅ 配置已保存到 {saved}\n")
-    print_mcp_config_snippet(exe_path)
+    print(t("setup_saved", path=saved))
+    print_mcp_config_snippet(exe_path, lang=lang)
 
 
 def _claude_desktop_config_path() -> Path:
@@ -154,13 +161,14 @@ def _claude_desktop_config_path() -> Path:
     return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
 
 
-def print_mcp_config_snippet(exe_path: str = "igpsport-mcp") -> None:
+def print_mcp_config_snippet(exe_path: str = "igpsport-mcp", *, lang: str = "zh") -> None:
     """Print a ready-to-paste MCP config JSON block for Claude Desktop / Code."""
+    t = lambda key, **kw: _t(key, lang, **kw)  # noqa: E731
     claude_desktop_path = _claude_desktop_config_path()
 
-    print("📋 复制以下 JSON 到 Claude Desktop 的配置文件:")
-    print(f"   路径: {claude_desktop_path}\n")
-    print('   在 "mcpServers" 中添加:')
+    print(t("mcp_config_header"))
+    print(t("mcp_config_path", path=claude_desktop_path))
+    print(t("mcp_config_add"))
     print()
     print("  {")
     print('    "igpsport": {')
@@ -170,8 +178,8 @@ def print_mcp_config_snippet(exe_path: str = "igpsport-mcp") -> None:
     print("    }")
     print("  }")
     print()
-    print("  💡 凭证已保存在本地 config.json,无需在 env 里重复填写。\n")
-    print("  📖 Claude Code 用户也可用:")
+    print(t("mcp_config_tip_stored"))
+    print(t("mcp_config_tip_cc"))
     print(f"     claude mcp add igpsport -- {exe_path}")
     print()
 
@@ -188,6 +196,7 @@ class Config:
     region: str
     cache_dir: Path
     log_level: str
+    lang: str = "zh"
 
     @property
     def token_path(self) -> Path:
@@ -225,12 +234,14 @@ def load_config(
     environ: Mapping[str, str] | None = None,
     *,
     interactive: bool = False,
+    lang: str | None = None,
 ) -> Config:
     """Read configuration.
 
     Priority: env vars → config.json → (optional) interactive prompt.
     *interactive* is forced True by ``--setup``; otherwise auto-detected
     from whether stdin is a tty.
+    *lang* overrides the ``IGPSPORT_LANG`` environment variable.
     """
     env = environ if environ is not None else os.environ
 
@@ -261,8 +272,17 @@ def load_config(
     should_prompt = interactive or (
         sys_is_tty() and not username and not password and not CONFIG_FILE.exists()
     )
+
+    # Resolve language before passing to interactive prompt
+    if lang is not None and _lang_supported(lang):
+        lang_value = lang
+    else:
+        lang_value = env.get("IGPSPORT_LANG", "").strip().lower()
+        if not _lang_supported(lang_value):
+            lang_value = "zh"
+
     if should_prompt:
-        creds = _prompt_credentials(env)
+        creds = _prompt_credentials(env, lang=lang_value)
         if creds.get("username"):
             username = creds["username"]
         if creds.get("password"):
@@ -301,6 +321,7 @@ def load_config(
         region=region,
         cache_dir=cache_dir,
         log_level=log_level,
+        lang=lang_value,
     )
 
 

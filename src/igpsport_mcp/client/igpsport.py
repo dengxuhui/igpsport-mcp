@@ -289,10 +289,7 @@ class IGPSportClient:
 
         if p.key == "intl":
             # International: PascalCase params, no bigSportType.
-            full_path = (
-                f"{stats_path}?DistanceUnit={distance_unit}"
-                f"&Time={time}&Type={stat_type}"
-            )
+            full_path = f"{stats_path}?DistanceUnit={distance_unit}&Time={time}&Type={stat_type}"
         else:
             # CN: camelCase params with bigSportType.
             full_path = (
