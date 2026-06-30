@@ -1,6 +1,6 @@
 [project]
 name = "igpsport-mcp"
-version = "0.6.0"
+version = "0.7.0"
 description = "Local MCP server exposing iGPSport cycling data with server-side training metrics (NP/IF/TSS/CTL/ATL/TSB)."
 readme = "README.md"
 license = { text = "MIT" }
