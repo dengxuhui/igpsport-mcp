@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.dengxuhui/igpsport-mcp -->
 # igpsport-mcp
 
 **English** | [简体中文](https://github.com/dengxuhui/igpsport-mcp/blob/main/README.zh-CN.md)

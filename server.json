@@ -1,0 +1,54 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/server.json",
+  "name": "io.github.dengxuhui/igpsport-mcp",
+  "title": "iGPSport MCP",
+  "description": "Local MCP server exposing iGPSport cycling data to LLM clients. Derived training metrics (NP/IF/TSS/CTL/ATL/TSB) are computed server-side, plus workout generation and push to head unit.",
+  "version": "0.6.0",
+  "repository": {
+    "url": "https://github.com/dengxuhui/igpsport-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registry_type": "pypi",
+      "identifier": "igpsport-mcp",
+      "version": "0.6.0",
+      "transport": {
+        "type": "stdio",
+        "command": "uvx",
+        "arguments": ["igpsport-mcp"]
+      },
+      "environment_variables": [
+        {
+          "name": "IGPSPORT_USERNAME",
+          "description": "iGPSport account (phone number for CN / email for international)",
+          "required": true
+        },
+        {
+          "name": "IGPSPORT_PASSWORD",
+          "description": "Password",
+          "required": true
+        },
+        {
+          "name": "IGPSPORT_REGION",
+          "description": "Region: cn (default) or intl",
+          "required": false
+        },
+        {
+          "name": "IGPSPORT_FTP",
+          "description": "Functional Threshold Power in watts",
+          "required": false
+        },
+        {
+          "name": "IGPSPORT_LTHR",
+          "description": "Lactate Threshold Heart Rate in bpm",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "categories": ["sports", "fitness", "data-analysis"],
+  "license": "MIT",
+  "homepage": "https://github.com/dengxuhui/igpsport-mcp",
+  "icon": null
+}

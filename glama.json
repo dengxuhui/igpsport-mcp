@@ -1,0 +1,12 @@
+{
+  "$schema": "https://glama.ai/mcp/schemas/connector.json",
+  "name": "igpsport-mcp",
+  "description": "Local MCP server exposing iGPSport cycling data to LLM clients with server-side training metrics (NP/IF/TSS/CTL/ATL/TSB), 17 tools for activity analysis, segment ranking, and workout generation.",
+  "license": "MIT",
+  "homepage": "https://github.com/dengxuhui/igpsport-mcp",
+  "maintainers": [
+    {
+      "email": "419270388@qq.com"
+    }
+  ]
+}
