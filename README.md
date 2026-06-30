@@ -1,125 +1,127 @@
 # igpsport-mcp
 
-把 **iGPSport 骑行数据**接入 Claude 等 LLM 客户端的本地 [MCP](https://modelcontextprotocol.io) server。用自然语言分析你的训练:_"我这周训练负荷怎么样?"_ _"对比一下上周和这周的两次长距离骑行。"_ _"我收藏的爬坡赛段排名怎样?"_ _"今年骑了多少公里,有哪些个人最佳?"_ ——还能反过来**让 Claude 给你开课**:_"按我的 FTP 编一节 2×20 SST,推到我的码表 App。"_
+**English** | [简体中文](https://github.com/dengxuhui/igpsport-mcp/blob/main/README.zh-CN.md)
 
-**差异化**:NP / IF / TSS / CTL / ATL / TSB 这些派生训练指标在 **MCP 层算好**再返回——LLM 拿到的是可直接讲故事的数字,而不是一堆原始 stream。
+A local [MCP](https://modelcontextprotocol.io) server that connects your **iGPSport cycling data** to LLM clients like Claude. Analyze your training in natural language: *"How's my training load this week?"* *"Compare my two long rides from last week and this week."* *"What's my ranking on that climb I starred?"* *"How many kilometers did I ride this year, and what are my personal bests?"* — and even **have Claude prescribe workouts for you**: *"Build me a 2×20 SST session based on my FTP and push it to my head unit."*
+
+**Key differentiator**: Derived training metrics — NP / IF / TSS / CTL / ATL / TSB — are **computed server-side in the MCP layer** before being returned. The LLM receives story-ready numbers, not raw stream data.
 
 ```
-你:  我最近 90 天的训练负荷趋势?是不是该减量了?
-Claude(经由 analyze_training_load):
-     当前 CTL(体能)72,ATL(疲劳)91,TSB(状态)-19 —— 处于明显疲劳累积区。
-     过去两周 TSS 持续高于 CTL,建议安排 3-5 天恢复周让 TSB 回到 -5 以上……
+You:   What's my training load trend over the last 90 days? Should I back off?
+Claude (via analyze_training_load):
+       Current CTL (Fitness) 72, ATL (Fatigue) 91, TSB (Form) -19 — you're in a significant fatigue hole.
+       TSS has been above CTL for the past two weeks. Consider a 3–5 day recovery block to get TSB back above -5…
 ```
 
-## 演示
+## Demo
 
-![igpsport-mcp 操作示例](assets/demo.gif)
+![igpsport-mcp demo](assets/demo.gif)
 
-> ⚠️ **非官方项目**。本工具通过**模拟 iGPSport 网页端请求**工作,iGPSport 随时可能改接口导致失效;请自行评估账号风险,**风险自负**。纯本地 stdio 运行,**你的数据不经任何第三方服务器**。
+> ⚠️ **Unofficial project**. This tool works by **simulating iGPSport web client requests**. iGPSport may change their API at any time, which could break functionality. Please evaluate account risk yourself — **use at your own risk**. Runs entirely locally over stdio — **your data never touches any third-party server**.
 
-## 快速上手(推荐)
+## Quick Start (Recommended)
 
-本工具是一个 MCP server,需要配合一个**支持 MCP 的客户端**使用(如 [Claude Desktop](https://claude.ai/download) / Claude Code / Cursor)。准备好客户端后,三步即可:
+This tool is an MCP server and requires an **MCP-capable client** (e.g. [Claude Desktop](https://claude.ai/download) / Claude Code / Cursor). Once you have a client ready, three steps:
 
-**1. 装 uv**(一个独立小工具,**不需要你先有 Python**,它会自动帮你准备好运行环境):
+**1. Install uv** (a standalone tool — **you do not need Python pre-installed**, uv handles the runtime automatically):
 
 ```bash
 # macOS / Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
-# Windows(PowerShell)
+# Windows (PowerShell)
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**2. 全局安装并跑一次配置向导**(交互式填手机号/密码,凭证只存在本地)。两个系统命令一样,**macOS 在「终端」、Windows 在「PowerShell」里执行**:
+**2. Install globally and run the setup wizard** (interactively enter your phone/email and password — credentials stay local). The commands are the same on both systems; run them in **Terminal** on macOS or **PowerShell** on Windows:
 
 ```bash
 uv tool install igpsport-mcp
 igpsport-mcp --setup
 ```
 
-> 装完若提示 `igpsport-mcp` 找不到,重开一个终端/PowerShell 窗口让 PATH 生效(uv 会把可执行文件放进 macOS 的 `~/.local/bin`、Windows 的 `%USERPROFILE%\.local\bin`)。
+> If `igpsport-mcp` is not found after installation, open a new terminal/PowerShell window so PATH updates take effect (uv places executables in `~/.local/bin` on macOS, `%USERPROFILE%\.local\bin` on Windows).
 
-向导会把凭证写到 config.json(权限仅本人可读),并打印一段**可直接粘贴**的 MCP 配置。配置文件位置:
+The wizard saves credentials to a config file (owner-readable only) and prints a **copy-paste ready** MCP configuration block. Config file locations:
 
-- **macOS**:`~/.igpsport-mcp/config.json`
-- **Windows**:`C:\Users\你的用户名\.igpsport-mcp\config.json`
+- **macOS**: `~/.igpsport-mcp/config.json`
+- **Windows**: `C:\Users\YourName\.igpsport-mcp\config.json`
 
-**3. 把打印出来的配置粘到你的客户端**,重启客户端即可(见下「接入 Claude」)。
+**3. Paste the printed config into your client**, then restart the client (see "Connect to Claude" below).
 
-> 粘贴前想确认账号密码没填错,先跑一次 `igpsport-mcp --check`——它会实际登录一次,打印 ✅ 成功或 ❌ 失败原因,省得加进客户端才发现连不上。
+> Want to verify your credentials before pasting? Run `igpsport-mcp --check` — it performs a real login and prints ✅ success or ❌ the reason for failure, so you don't add it to your client only to find it broken.
 >
-> 之后想看粘贴用的配置,随时 `igpsport-mcp --mcp-config` 再打印一次。
+> Need to print the config snippet again later? `igpsport-mcp --mcp-config` anytime.
 
 ---
 
-> 开发者 / 已有环境:直接 `uvx igpsport-mcp` 一次性运行,或用下方的环境变量方式配置,无需走向导。
+> Developers / users with an existing Python environment: use `uvx igpsport-mcp` for one-shot runs, or configure via environment variables below instead of the wizard.
 
-## 命令行用法
+## CLI Usage
 
-无参数运行即以 stdio 模式启动 MCP server(供客户端拉起,平时不用手动跑)。其余子命令:
+Running with no arguments starts the MCP server in stdio mode (this is what your MCP client invokes — you normally don't run it manually). Other subcommands:
 
-| 命令 | 用途 |
+| Command | Purpose |
 |---|---|
-| `igpsport-mcp --setup` | 交互式配置向导:填手机号/密码,存到本地 config.json |
-| `igpsport-mcp --mcp-config` | 打印可直接粘贴的 MCP 客户端配置 |
-| `igpsport-mcp --check` | 实际登录一次,验证凭证是否可用(账号会脱敏显示) |
-| `igpsport-mcp --lang en\|zh` | 设置输出语言(也可通过 `IGPSPORT_LANG` 环境变量;默认 `zh`) |
-| `igpsport-mcp --version` | 打印版本号 |
-| `igpsport-mcp --help` | 显示帮助 |
+| `igpsport-mcp --setup` | Interactive setup wizard: enter phone/email + password, saved to local config.json |
+| `igpsport-mcp --mcp-config` | Print a copy-paste ready MCP client configuration block |
+| `igpsport-mcp --check` | Perform a real login to verify credentials (account is shown masked) |
+| `igpsport-mcp --lang en\|zh` | Set output language (also settable via `IGPSPORT_LANG` env var; default `zh`) |
+| `igpsport-mcp --version` | Print version number |
+| `igpsport-mcp --help` | Show help |
 
-## 配置(环境变量)
+## Configuration (Environment Variables)
 
-> 走过 `--setup` 向导的用户**可跳过本节**——凭证已存好。下面适合想用环境变量、或在 CI / 多环境里管理凭证的用户。环境变量优先级高于 config.json。
+> Users who ran the `--setup` wizard **can skip this section** — credentials are already stored. The section below is for users who prefer environment variables, or need to manage credentials across CI / multiple environments. Env vars take priority over config.json.
 
-| 变量 | 必填 | 说明 |
+| Variable | Required | Description |
 |---|---|---|
-| `IGPSPORT_USERNAME` | ✅ | iGPSport 账号(国服手机号 / 国际版邮箱) |
-| `IGPSPORT_PASSWORD` | ✅ | 密码 |
-| `IGPSPORT_REGION` | 选填 | 区域,默认 `cn`(国服 `app.igpsport.cn`);国际版用户填 `intl`(`app.igpsport.com`) |
-| `IGPSPORT_FTP` | 选填 | 功率阈值(瓦)。**不填会自动读取 iGPSport 账号里设置的 FTP**;填了则覆盖 |
-| `IGPSPORT_LTHR` | 选填 | 乳酸阈心率(bpm),用于心率区间与 hrTSS 兜底。**不填同样自动从 iGPSport 读取**;填了则覆盖 |
-| `IGPSPORT_CACHE_DIR` | 选填 | 缓存目录,默认 macOS `~/.cache/igpsport-mcp`、Windows `C:\Users\你\.cache\igpsport-mcp` |
-| `IGPSPORT_LANG` | 选填 | 输出语言,默认 `zh`(中文);可选 `en`(英文) |
-| `IGPSPORT_LOG_LEVEL` | 选填 | 默认 `INFO` |
+| `IGPSPORT_USERNAME` | ✅ | iGPSport account (phone number for CN / email for international) |
+| `IGPSPORT_PASSWORD` | ✅ | Password |
+| `IGPSPORT_REGION` | Optional | Region, default `cn` (China server `app.igpsport.cn`); international users set `intl` (`app.igpsport.com`) |
+| `IGPSPORT_FTP` | Optional | Functional Threshold Power in watts. **Leave blank to auto-read from your iGPSport profile**; set to override |
+| `IGPSPORT_LTHR` | Optional | Lactate Threshold Heart Rate in bpm, used for HR zones and hrTSS fallback. **Also auto-read from iGPSport**; set to override |
+| `IGPSPORT_LANG` | Optional | Output language, `zh` (default) or `en` |
+| `IGPSPORT_CACHE_DIR` | Optional | Cache directory; defaults to `~/.cache/igpsport-mcp` (macOS) / `C:\Users\You\.cache\igpsport-mcp` (Windows) |
+| `IGPSPORT_LOG_LEVEL` | Optional | Default `INFO` |
 
-> FTP / LTHR 现在默认从你 iGPSport 账号的运动信息里自动读取(还会带出体重、最大心率),所以**通常无需手动填**。只有当你想用与 App 不同的阈值时,才设这两个环境变量来覆盖。若账号里也没设 FTP,则无法计算 IF / TSS / CTL / ATL / TSB —— 请到 iGPSport 里补上,或填 `IGPSPORT_FTP`。
+> FTP / LTHR are now **auto-read from your iGPSport athlete profile** by default (along with body weight and max HR), so you normally **don't need to set them manually**. Only set the env vars when you want to use thresholds different from what's in the app. If your iGPSport profile also has no FTP set, IF / TSS / CTL / ATL / TSB cannot be computed — either add FTP in iGPSport or set `IGPSPORT_FTP`.
 
-## 国际版支持
+## International Edition Support
 
-通过 `IGPSPORT_REGION=intl` 切换到国际版(`app.igpsport.com`)。国际版与国服**账号不互通**,需在 `app.igpsport.com` 单独注册。
+Switch to the international edition (`app.igpsport.com`) by setting `IGPSPORT_REGION=intl`. The international and China servers use **separate accounts** — you must register separately at `app.igpsport.com`.
 
-**与国服的差异**:
+**Differences from the China server**:
 
-- 国际版无 WASM 签名,鉴权走纯 JWT,设计更简洁
-- **赛段功能不可用**(国际版赛段为 beta,列表为空)
-- 训练参数端点用 v2 路径、年度统计路径也不同(工具内部自动适配)
-- Workout 课程格式跨区域兼容,IR 编译层零改动
+- No WASM signing — authentication uses pure JWT, a simpler design
+- **Segment features are unavailable** (international segments are in beta, listing is empty)
+- Training parameter endpoint uses v2 path; yearly statistics path differs (auto-adapted internally)
+- Workout course format is cross-region compatible — zero changes in the IR compilation layer
 
-配置示例:
+Example configuration:
 
 ```bash
-# env 方式
+# via env vars
 export IGPSPORT_REGION=intl
 export IGPSPORT_USERNAME=your_email@example.com
 export IGPSPORT_PASSWORD=your_password
 ```
 
-或在 `--setup` 向导的第一步选择「2. 国际版」。
+Or select "2. International" in the first step of the `--setup` wizard.
 
-> 国际版 Fit 文件的 OSS 存储在美国(`oss-us-west-1`),国内用户下载可能略慢。
+> International edition FIT files are stored on OSS in the US (`oss-us-west-1`). Downloads may be slightly slower for users in China.
 
-## 接入 Claude
+## Connect to Claude
 
 ### Claude Desktop
 
-打开配置文件 `claude_desktop_config.json`(没有就新建),粘入下面的内容,然后**完全退出并重开** Claude Desktop。文件位置:
+Open the config file `claude_desktop_config.json` (create it if it doesn't exist), paste the content below, then **fully quit and reopen** Claude Desktop. File locations:
 
-- **macOS**:`~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**:`%APPDATA%\Claude\claude_desktop_config.json`(即 `C:\Users\你\AppData\Roaming\Claude\claude_desktop_config.json`)
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json` (i.e. `C:\Users\You\AppData\Roaming\Claude\claude_desktop_config.json`)
 
-> 也可在 Claude Desktop 里点 **设置 → Developer → Edit Config** 直接打开这个文件。
+> You can also open this file directly from Claude Desktop via **Settings → Developer → Edit Config**.
 
-**走过 `--setup` 向导**(凭证已在 config.json,`env` 留空即可,这也是 `--mcp-config` 打印的内容):
+**After running `--setup`** (credentials in config.json, leave `env` empty — this is what `--mcp-config` prints):
 
 ```json
 {
@@ -133,7 +135,7 @@ export IGPSPORT_PASSWORD=your_password
 }
 ```
 
-**或** 不走向导、用 `uvx` + 环境变量:
+**Or** skip the wizard and use `uvx` with environment variables:
 
 ```json
 {
@@ -142,60 +144,60 @@ export IGPSPORT_PASSWORD=your_password
       "command": "uvx",
       "args": ["igpsport-mcp"],
       "env": {
-        "IGPSPORT_USERNAME": "你的手机号",
-        "IGPSPORT_PASSWORD": "你的密码"
+        "IGPSPORT_USERNAME": "your_phone_or_email",
+        "IGPSPORT_PASSWORD": "your_password"
       }
     }
   }
 }
 ```
 
-> FTP / LTHR 默认自动从 iGPSport 账号读取,无需填写。只有想覆盖 App 里的阈值时,才在 `env` 里加 `"IGPSPORT_FTP": "250"`、`"IGPSPORT_LTHR": "160"`。
+> FTP / LTHR are auto-read from your iGPSport profile by default — no need to set them. Only add `"IGPSPORT_FTP": "250"` or `"IGPSPORT_LTHR": "160"` in `env` if you want to override what's in the app.
 
 ### Claude Code
 
-走过向导(凭证已存好):
+After the wizard (credentials stored):
 
 ```bash
 claude mcp add igpsport --scope user -- igpsport-mcp
 ```
 
-或用 uvx + 环境变量:
+Or with uvx + env vars:
 
 ```bash
 claude mcp add igpsport --scope user \
-  --env IGPSPORT_USERNAME=你的手机号 \
-  --env IGPSPORT_PASSWORD=你的密码 \
+  --env IGPSPORT_USERNAME=your_phone_or_email \
+  --env IGPSPORT_PASSWORD=your_password \
   -- uvx igpsport-mcp
 ```
 
-加完用 `/mcp` 或 `claude mcp list` 确认状态为 connected。
+Verify with `/mcp` or `claude mcp list` — status should be `connected`.
 
 ### OpenClaw
 
-[OpenClaw](https://github.com/openclaw/openclaw) 的 MCP 走 stdio,跟 Claude Desktop / Claude Code 是同一套协议,所以上面的配置可以直接搬过来。
+[OpenClaw](https://github.com/openclaw/openclaw) uses stdio for MCP, the same protocol as Claude Desktop / Claude Code, so the configuration above works directly.
 
-**方式一:直接用自然语言让 OpenClaw 自己装(推荐)**
+**Method 1: Ask OpenClaw in natural language (recommended)**
 
-先确保已 `uv tool install igpsport-mcp` 并跑过 `igpsport-mcp --setup`,然后在你接入的聊天渠道里直接对 OpenClaw 说:
+First install with `uv tool install igpsport-mcp` and run `igpsport-mcp --setup`. Then, in your connected chat channel, simply tell OpenClaw:
 
-> 我装了 igpsport-mcp 这个工具,帮我配置到 OpenClaw 里。
+> I installed igpsport-mcp. Help me configure it in OpenClaw.
 
-它会自己定位二进制路径、用 `igpsport-mcp --check` 验证凭证、调 `openclaw mcp add` 写进配置并 probe 一遍,全程不用你碰命令行或 JSON。
+It will locate the binary path, verify credentials with `igpsport-mcp --check`, write the config via `openclaw mcp add`, and probe it — all without you touching a command line or JSON.
 
-**方式二:手动一条命令搞定**
+**Method 2: One-liner**
 
 ```bash
-# 走过向导(凭证已存好)
+# After the wizard (credentials stored)
 openclaw mcp add igpsport --command igpsport-mcp
 
-# 或用 uvx + 环境变量
+# Or with uvx + env vars
 openclaw mcp add igpsport --command uvx --args igpsport-mcp \
-  --env IGPSPORT_USERNAME=你的手机号 \
-  --env IGPSPORT_PASSWORD=你的密码
+  --env IGPSPORT_USERNAME=your_phone_or_email \
+  --env IGPSPORT_PASSWORD=your_password
 ```
 
-写入位置是 `~/.openclaw/openclaw.json` 的 `mcp.servers.igpsport`,也可手动编辑该文件:
+This writes to `~/.openclaw/openclaw.json` under `mcp.servers.igpsport`. You can also edit the file manually:
 
 ```json5
 {
@@ -211,141 +213,141 @@ openclaw mcp add igpsport --command uvx --args igpsport-mcp \
 }
 ```
 
-验证:
+Verification:
 
 ```bash
-openclaw mcp list      # 看到 igpsport
+openclaw mcp list      # should show igpsport
 openclaw mcp status    # igpsport: stdio
 openclaw mcp probe     # igpsport: 16 tools, resources, prompts
 ```
 
-`mcp` 是热生效字段,无需重启 gateway,下一轮会话起即可调用;必要时 `openclaw mcp reload` 强制刷新运行时缓存。之后在你接入的聊天渠道(Discord / Telegram / Slack 等)里直接用自然语言提问即可。
+The `mcp` field is hot-reloaded — no gateway restart needed; it takes effect in the next conversation turn. Use `openclaw mcp reload` to force-refresh the runtime cache if needed. Then ask questions in natural language from any connected channel (Discord, Telegram, Slack, etc.).
 
-> **连不上?** 先在终端跑 `igpsport-mcp --check` 把问题分开:
-> - 报 ❌ 登录失败 → 是账号密码问题,重跑 `igpsport-mcp --setup`。
-> - 报 ✅ 成功但客户端仍连不上 → 多半是 `igpsport-mcp` / `uvx` 不在客户端的 PATH 里(尤其 Claude Desktop 常取不到登录 shell 的 PATH)。把配置里的 `command` 换成可执行文件的**绝对路径**:
+> **Not connecting?** Run `igpsport-mcp --check` in a terminal first to isolate the problem:
+> - ❌ Login failed → credential issue; re-run `igpsport-mcp --setup`.
+> - ✅ Success but the client still can't connect → likely `igpsport-mcp` / `uvx` isn't in the client's PATH (Claude Desktop in particular often can't see the login shell's PATH). Replace `command` in the config with the **absolute path**:
 >
-> - **macOS**:终端跑 `which igpsport-mcp`(或 `which uvx`),如 `/Users/你/.local/bin/igpsport-mcp`。
-> - **Windows**:PowerShell 跑 `where.exe igpsport-mcp`(或 `where.exe uvx`),如 `C:\Users\你\.local\bin\igpsport-mcp.exe`。JSON 里反斜杠要写成双反斜杠,例如 `"command": "C:\\Users\\你\\.local\\bin\\igpsport-mcp.exe"`。
+> - **macOS**: run `which igpsport-mcp` (or `which uvx`) in Terminal, e.g. `/Users/You/.local/bin/igpsport-mcp`.
+> - **Windows**: run `where.exe igpsport-mcp` (or `where.exe uvx`) in PowerShell, e.g. `C:\Users\You\.local\bin\igpsport-mcp.exe`. In JSON, backslashes must be doubled, e.g. `"command": "C:\\Users\\You\\.local\\bin\\igpsport-mcp.exe"`.
 
-## 更新
+## Updates
 
-**`uv tool install` 安装的**(两个系统一样),升级到最新版:
+**For `uv tool install` installations** (both systems), upgrade to the latest:
 
 ```bash
 uv tool upgrade igpsport-mcp
 ```
 
-升级后重启客户端(Claude Desktop 完全退出再开;Claude Code 重连即可)。看当前版本:`igpsport-mcp --version`。
+Restart your client after upgrading (fully quit and reopen Claude Desktop; reconnect for Claude Code). Check current version: `igpsport-mcp --version`.
 
-> **`uvx igpsport-mcp` 一次性运行的**无需手动升级——uvx 默认用最新版。若本地缓存了旧版,用 `uvx igpsport-mcp@latest` 或清缓存 `uv cache clean` 后再跑即可拿到最新。
+> **For `uvx igpsport-mcp` one-shot users**, no manual upgrade is needed — uvx uses the latest version by default. If a stale version is cached locally, use `uvx igpsport-mcp@latest` or clear the cache with `uv cache clean` first.
 
-## 卸载
+## Uninstall
 
-**1. 卸载程序本体**(两个系统一样):
+**1. Remove the program** (same for both systems):
 
 ```bash
 uv tool uninstall igpsport-mcp
 ```
 
-**2. 删除本地凭证与缓存**(可选,彻底清干净):
+**2. Remove local credentials and cache** (optional, for a complete cleanup):
 
 ```bash
-# macOS / Linux(终端)
-rm -rf ~/.igpsport-mcp        # 凭证 config.json
-rm -rf ~/.cache/igpsport-mcp  # token、SQLite、FIT 文件缓存
+# macOS / Linux (Terminal)
+rm -rf ~/.igpsport-mcp        # credentials (config.json)
+rm -rf ~/.cache/igpsport-mcp  # tokens, SQLite, FIT file cache
 ```
 
 ```powershell
-# Windows(PowerShell)
+# Windows (PowerShell)
 Remove-Item -Recurse -Force "$env:USERPROFILE\.igpsport-mcp"
 Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 ```
 
-**3. 从客户端配置里移除 `igpsport`**:Claude Desktop 删掉 `claude_desktop_config.json` 里 `mcpServers` 下的 `igpsport` 块;Claude Code 用 `claude mcp remove igpsport`;OpenClaw 用 `openclaw mcp unset igpsport`(或删掉 `~/.openclaw/openclaw.json` 里 `mcp.servers` 下的 `igpsport` 块)。
+**3. Remove `igpsport` from your client config**: Claude Desktop — delete the `igpsport` block under `mcpServers` in `claude_desktop_config.json`; Claude Code — `claude mcp remove igpsport`; OpenClaw — `openclaw mcp unset igpsport` (or delete the `igpsport` block under `mcp.servers` in `~/.openclaw/openclaw.json`).
 
-> 用 `uvx igpsport-mcp` 一次性运行的没有「本体」需要卸载,只需做第 2、3 步即可。
+> For `uvx igpsport-mcp` one-shot users, there is no "program" to uninstall — just do steps 2 and 3.
 
-## 提供的 16 个工具
+## 16 Tools Provided
 
-**活动与训练(8)**
+**Activities & Training (8)**
 
-| 工具 | 用途 |
+| Tool | Purpose |
 |---|---|
-| `list_activities` | 列出活动(支持日期范围、分页) |
-| `get_activity_summary` | 单次活动派生指标(NP/IF/TSS/work、心率与功率区间停留时间) |
-| `get_activity_streams` | 时间序列(强制降采样 + 通道选择,token 友好) |
-| `get_activity_laps` | 圈/分段数据(逐圈 NP) |
-| `get_athlete_profile` | 训练参数:FTP/LTHR(自动读 iGPSport 或用环境变量覆盖);体重、最大心率始终从 iGPSport 读取;含区间边界 |
-| `get_athlete_stats` | 周期聚合统计(本地从活动列表算) |
-| `compare_activities` | 多次活动对比(2–5 条) |
-| `analyze_training_load` | CTL/ATL/TSB 趋势 + 状态解读(杀手 query) |
+| `list_activities` | List activities (supports date range, pagination) |
+| `get_activity_summary` | Single-activity derived metrics: NP / IF / TSS / work, HR & power zone time-in-zone |
+| `get_activity_streams` | Time-series data (enforced downsampling + channel selection, token-friendly) |
+| `get_activity_laps` | Lap / segment data (per-lap NP) |
+| `get_athlete_profile` | Training parameters: FTP / LTHR (auto-read from iGPSport or overridden via env vars); body weight and max HR always from iGPSport; includes zone boundaries |
+| `get_athlete_stats` | Period-aggregated statistics (computed locally from activity list) |
+| `compare_activities` | Compare multiple activities (2–5) |
+| `analyze_training_load` | CTL / ATL / TSB trend + form interpretation (the killer query) |
 
-**赛段(3)**
+**Segments (3)**
 
-| 工具 | 用途 |
+| Tool | Purpose |
 |---|---|
-| `list_segments_collected` | 我收藏(收星)的赛段列表,含我的最好成绩 |
-| `get_segment_detail` | 赛段详情:距离/坡度/爬升 + KOM + 最快榜 + 我的 PR |
-| `get_segment_rank` | 赛段排行榜(`query_type` 1=总榜、2=年度等),含我的排名 |
+| `list_segments_collected` | List starred segments with your best time |
+| `get_segment_detail` | Segment details: distance / gradient / elevation gain + KOM + fastest leaderboard + your PR |
+| `get_segment_rank` | Segment leaderboard (`query_type` 1=overall, 2=yearly, etc.), includes your rank |
 
-**统计与成就(1)**
+**Statistics & Achievements (1)**
 
-| 工具 | 用途 |
+| Tool | Purpose |
 |---|---|
-| `get_member_statistics` | 官方年度统计与个人最佳:总里程/时长/卡路里/TSS、逐月里程、距离里程碑、各项 PR(最远/最久/最快/最大功率/最大爬升) |
+| `get_member_statistics` | Official yearly statistics & personal bests: total distance / duration / calories / TSS, monthly distance, distance milestones, various PRs (longest / longest duration / fastest / max power / max elevation) |
 
-**训练课程(4)** — 唯一的「写回」能力
+**Training Courses (4)** — the only "write" capability
 
-| 工具 | 用途 |
+| Tool | Purpose |
 |---|---|
-| `create_workout` | 用自然语言描述结构化训练课(热身/主课/间歇/恢复),编译成 iGPSport 原生格式并推到你的码表 App;支持 `dry_run=true` 先预览不发送;`with_calendar=true` 额外返回一段标准 iCalendar(`VEVENT`)产物,可让 LLM 转手写进苹果日历 / 提醒事项 / Notion 等下游工具 |
-| `list_workouts` | 从服务端实时拉取全部自定义课程(App 端删除也会同步反映) |
-| `get_workout_detail` | 拉取某节课程的完整结构 |
-| `delete_workout` | 删除课程。**破坏性、不可恢复**:默认只返回确认预览,需再带 `confirm=true` 才真正删除 |
+| `create_workout` | Describe a structured training session in natural language (warmup / main set / intervals / cooldown), compile it to iGPSport's native format, and push it to your head unit app; supports `dry_run=true` to preview without sending; `with_calendar=true` additionally returns a standard iCalendar (`VEVENT`) artifact for downstream tools like Apple Calendar, Reminders, or Notion |
+| `list_workouts` | Pull all custom workouts from the server in real time (reflects deletions made in the app) |
+| `get_workout_detail` | Fetch the full structure of a specific workout |
+| `delete_workout` | Delete a workout. **Destructive and irreversible**: defaults to a confirmation preview; requires explicit `confirm=true` to actually delete |
 
-> 功率目标支持绝对瓦数、%FTP(用你的 FTP 自动换算)、功率区间;也支持心率、踏频、速度目标。时长可按时间/距离/卡路里/手动按圈。课程创建后会出现在 iGPSport App 的「训练课程」里,可同步到码表执行。
+> Power targets support absolute watts, %FTP (auto-converted using your FTP), and power zones; heart rate, cadence, and speed targets are also supported. Duration can be set by time / distance / calories / manual lap button. Created workouts appear in the iGPSport app under "Training Courses" and can be synced to your head unit for execution.
 
-## 派生指标说明
+## Derived Metrics Reference
 
-- **NP**(标准化功率):`((30s 滑动均值)^4 的均值)^0.25`,计算前 stream 重采样到 1Hz。
-- **IF** = NP / FTP;**TSS** = `时长 × NP × IF / (FTP × 3600) × 100`。
-- **CTL / ATL / TSB**:日 TSS 的指数加权(α=1/42、1/7),TSB = CTL − ATL。
-- **无功率计兜底**:hrTSS = `(时长/3600) × (平均心率/LTHR)² × 100`,会标注 `estimated from HR`。
-- **区间模型**:心率用 Friel(基于 LTHR),功率用 Coggan 7 区(基于 FTP)。
+- **NP** (Normalized Power): `((30 s rolling average power)^4 mean)^0.25`; stream is resampled to 1 Hz before computation.
+- **IF** = NP / FTP; **TSS** = `duration_s × NP × IF / (FTP × 3600) × 100`.
+- **CTL / ATL / TSB**: exponential weighted moving averages of daily TSS (α = 1/42, 1/7); TSB = CTL − ATL.
+- **No-power-meter fallback**: hrTSS = `(duration_s / 3600) × (avg HR / LTHR)² × 100`, annotated `estimated from HR`.
+- **Zone models**: HR uses Friel (LTHR-based); Power uses Coggan 7-zone (FTP-based).
 
 ## FAQ
 
-**Q:必须有功率计吗?**
-A:不必。没功率计时心率相关指标照常,TSS 走 hrTSS 兜底(精度较低,会标注)。但建议填 FTP 以解锁功率指标。
+**Q: Do I need a power meter?**
+A: No. Without a power meter, heart-rate-based metrics work normally and TSS falls back to hrTSS (lower accuracy, annotated as such). However, setting FTP is recommended to unlock power-based metrics.
 
-**Q:数据会上传到哪里吗?**
-A:不会有第三方。除了向 iGPSport 读写**你自己账号**的数据(读活动/统计,以及 `create_workout`/`delete_workout` 时写你自己的训练课程),一切都在本地;FIT 文件与派生指标缓存在本地。
+**Q: Is my data uploaded anywhere?**
+A: Not to any third party. Other than reading/writing **your own** iGPSport account data (reading activities/stats, and `create_workout`/`delete_workout` for your own training courses), everything happens locally. FIT files and derived metrics are cached locally.
 
-**Q:`create_workout` / `delete_workout` 会乱动我的数据吗?**
-A:`create_workout` 只新增训练课程,可先 `dry_run=true` 预览编译结果再决定是否发送。`delete_workout` 是不可恢复操作,默认只返回确认预览,必须显式 `confirm=true` 才真正删除——所以 LLM 不会在你没确认时删掉课程。
+**Q: Can `create_workout` / `delete_workout` mess up my data?**
+A: `create_workout` only adds new training courses — you can use `dry_run=true` to preview the compiled result before deciding to send. `delete_workout` is irreversible and defaults to a confirmation preview; it requires explicit `confirm=true` to actually delete — so an LLM cannot delete a course without your confirmation.
 
-**Q:`with_calendar` 会自动写我的日历吗?**
-A:不会。本服务**只产出**一段标准 iCalendar(`VEVENT`)文本,自己绝不碰任何日历 API、也不外发数据。是否真正写入,由你的 LLM 客户端把这段产物转交给另一个日历/提醒类工具(如苹果日历、提醒事项、Notion 的 MCP)来决定。训练课是没有执行日期的模板,所以 `DTSTART` 是占位符 `{{SCHEDULED_DATE}}`,具体排到哪天由下游填。
+**Q: Does `with_calendar` automatically write to my calendar?**
+A: No. This server **only produces** a standard iCalendar (`VEVENT`) text artifact — it never touches any calendar API or sends data externally. Whether the event is actually written to a calendar is up to your LLM client to hand off to another calendar/reminder tool (e.g. Apple Calendar, Reminders, or a Notion MCP). Since a workout is a template with no execution date, the `DTSTART` is the placeholder `{{SCHEDULED_DATE}}` — the downstream consumer fills in the actual date.
 
-**Q:接口失效了怎么办?**
-A:iGPSport 改版可能导致失效,工具会抛出明确错误。欢迎到 [Issues](https://github.com/dengxuhui/igpsport-mcp/issues) 反馈。
+**Q: What if the API breaks?**
+A: iGPSport may change their API, which could cause breakage — the tool will throw a clear error. Please report issues at [Issues](https://github.com/dengxuhui/igpsport-mcp/issues).
 
-**Q:支持跑步/其它码表吗?**
-A:不支持。本项目专注 iGPSport 骑行数据。
+**Q: Does it support running / other head units?**
+A: No. This project focuses exclusively on iGPSport cycling data.
 
-**Q:国际版有什么不同?**
-A:国际版和国服账号不互通。国际版无赛段功能(处于 beta,列表为空),鉴权机制更简单(不需要 WASM 签名)。其余活动/训练课程/统计功能一致。详见「国际版支持」节。
+**Q: What's different about the international edition?**
+A: International and China server accounts are separate. The international edition lacks segment features (beta, listing is empty) and uses a simpler authentication mechanism (no WASM signing). Activities, training courses, and statistics work the same. See the "International Edition Support" section for details.
 
-## 开发
+## Development
 
 ```bash
 uv sync --extra dev
-uv run pytest            # 测试
-uv run pytest -m integration   # 联网集成测试
-ruff check . && ruff format .  # lint/format
+uv run pytest            # tests
+uv run pytest -m integration   # online integration tests
+ruff check . && ruff format .  # lint / format
 ```
 
 ## License
 
-[MIT](LICENSE)。本项目与 iGPSport 官方无任何关联。
+[MIT](LICENSE). This project is not affiliated with iGPSport in any way.
