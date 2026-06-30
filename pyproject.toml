@@ -1,6 +1,6 @@
 [project]
 name = "igpsport-mcp"
-version = "0.7.0"
+version = "0.7.1"
 description = "Local MCP server exposing iGPSport cycling data with server-side training metrics (NP/IF/TSS/CTL/ATL/TSB)."
 readme = "README.md"
 license = { text = "MIT" }
@@ -53,6 +53,9 @@ packages = ["src/igpsport_mcp"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/igpsport_mcp/client/edge_core_wasm_bg.wasm" = "igpsport_mcp/client/edge_core_wasm_bg.wasm"
+"glama.json" = "glama.json"
+"server.json" = "server.json"
+"Dockerfile" = "Dockerfile"
 
 [tool.ruff]
 line-length = 100
