@@ -3,7 +3,7 @@
   "name": "io.github.dengxuhui/igpsport-mcp",
   "title": "iGPSport MCP",
   "description": "Local MCP server exposing iGPSport cycling data to LLM clients. Derived training metrics (NP/IF/TSS/CTL/ATL/TSB) are computed server-side, plus workout generation and push to head unit.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "repository": {
     "url": "https://github.com/dengxuhui/igpsport-mcp",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registry_type": "pypi",
       "identifier": "igpsport-mcp",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "transport": {
         "type": "stdio",
         "command": "uvx",
