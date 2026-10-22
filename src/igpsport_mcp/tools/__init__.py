@@ -1,4 +1,4 @@
-"""MCP tool layer. ``register_all`` wires the 17 tools onto the FastMCP server."""
+"""MCP tool layer. ``register_all`` wires the 28 tools onto the FastMCP server."""
 
 from __future__ import annotations
 
@@ -11,7 +11,27 @@ if TYPE_CHECKING:
 
 
 def register_all(server: FastMCP, service: IGPSportService) -> None:
-    from . import activities, athlete, compare, laps, segments, streams, training_load, workouts
+    from . import (
+        activities,
+        athlete,
+        compare,
+        gear,
+        laps,
+        segments,
+        streams,
+        training_load,
+        workouts,
+    )
 
-    for module in (activities, streams, laps, athlete, compare, training_load, segments, workouts):
+    for module in (
+        activities,
+        streams,
+        laps,
+        athlete,
+        compare,
+        training_load,
+        segments,
+        workouts,
+        gear,
+    ):
         module.register(server, service)

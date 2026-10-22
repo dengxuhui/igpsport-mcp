@@ -22,6 +22,7 @@ from ..analysis.summary import build_summary
 from ..analysis.thresholds import ActivitySignal
 from ..config import Config
 from ..fit.parser import parse_fit, resample_to_1hz
+from ..gear.service import GearService
 from . import _normalize as norm
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class IGPSportService:
         self._client = client
         self._db = db_conn
         self._member_cache: Any = _UNSET
+        self._gear: GearService | None = None
         # In-memory caches (session lifetime only).
         self._fit_parse_cache: dict[str, Any] = {}
         self._summary_cache: dict[str, dict[str, Any]] = {}
@@ -60,6 +62,12 @@ class IGPSportService:
 
             self._client = IGPSportClient(self._config)
         return self._client
+
+    @property
+    def gear(self) -> GearService:
+        if self._gear is None:
+            self._gear = GearService(self.client)
+        return self._gear
 
     @property
     def db(self) -> sqlite3.Connection:

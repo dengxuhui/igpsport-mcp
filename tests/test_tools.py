@@ -21,6 +21,17 @@ EXPECTED_TOOLS = {
     "list_workouts",
     "get_workout_detail",
     "delete_workout",
+    "list_bikes",
+    "get_bike",
+    "get_bike_options",
+    "create_bike",
+    "update_bike",
+    "set_default_bike",
+    "set_bike_retired",
+    "reset_bike_odometer",
+    "delete_bike",
+    "get_activity_bike",
+    "set_activity_bike",
 }
 
 

@@ -219,7 +219,7 @@ Verification:
 ```bash
 openclaw mcp list      # should show igpsport
 openclaw mcp status    # igpsport: stdio
-openclaw mcp probe     # igpsport: 17 tools, resources, prompts
+openclaw mcp probe     # igpsport: 28 tools, resources, prompts
 ```
 
 The `mcp` field is hot-reloaded — no gateway restart needed; it takes effect in the next conversation turn. Use `openclaw mcp reload` to force-refresh the runtime cache if needed. Then ask questions in natural language from any connected channel (Discord, Telegram, Slack, etc.).
@@ -269,7 +269,7 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 
 > For `uvx igpsport-mcp` one-shot users, there is no "program" to uninstall — just do steps 2 and 3.
 
-## 17 Tools Provided
+## 28 Tools Provided
 
 **Activities & Training (9)**
 
@@ -309,6 +309,56 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 | `delete_workout` | Delete a workout. **Destructive and irreversible**: defaults to a confirmation preview; requires explicit `confirm=true` to actually delete |
 
 > Power targets support absolute watts, %FTP (auto-converted using your FTP), and power zones; heart rate, cadence, and speed targets are also supported. Duration can be set by time / distance / calories / manual lap button. Created workouts appear in the iGPSport app under "Training Courses" and can be synced to your head unit for execution.
+
+
+### Bikes and activity assignments (11, CN and international accounts)
+
+Gear operations reuse the existing client and login for `IGPSPORT_REGION=cn`
+(default) and `intl`, using the regional host and authentication (CN WASM
+signing, international JWT). Chinese endpoint compatibility is assumed from
+the international API contract and has not been verified with a live CN account.
+Gear is always read live,
+without SQLite or FIT caching; images are excluded from tool inputs and outputs.
+
+| Tool | Parameters and behavior |
+|---|---|
+| `list_bikes` | `status="active"` (`active`, `retired`, `all`), `limit=20` (1–100), `offset=0` |
+| `get_bike` | `bike_id`; searches active and retired bikes |
+| `get_bike_options` | Preset bike types and frame sizes |
+| `create_bike` | Typed `bike` object; optional `dry_run=false` |
+| `update_bike` | `bike_id`, typed partial `changes`; optional `dry_run=false` |
+| `set_default_bike` | `bike_id`; requires an active bike |
+| `set_bike_retired` | `bike_id`, `retired` boolean |
+| `reset_bike_odometer` | `bike_id`; resets Current Odometer only |
+| `delete_bike` | `bike_id`, `confirm=false`; previews by default, requires retirement to delete |
+| `get_activity_bike` | `ride_id`; assignment or null |
+| `set_activity_bike` | `ride_id`, `bike_id` (string or null to unassign) |
+
+Creation requires `brand`, `model`, `bike_type`, `weight_kg`, and
+`wheel_circumference_mm`. `bike_type` and `frame_size` accept preset integer IDs
+or custom text (bike types: 1–14 characters). Defaults: current UTC year,
+frame size M (ID 6), 175 mm cranks, zero mileage, maintenance disabled,
+tracking starts now, non-default and non-retired. Optional fields are `year`,
+`frame_size`, `crank_length_mm`, `initial_mileage_km`, `current_odometer_km`,
+and `maintenance_interval_km` (0 disables maintenance). Omit unchanged fields
+from updates; null values are rejected. Use kilometres, kilograms, and
+millimetres; mileage and weight convert to whole metres and grams.
+
+```json
+{"bike":{"brand":"Kellys","model":"Soot 70","bike_type":"Gravel","weight_kg":10.8,"wheel_circumference_mm":2200},"dry_run":true}
+```
+
+Responses use snake_case, explicit unit suffixes, boolean flags, and ISO 8601
+UTC tracking timestamps. Mutations read back the result: `confirmed` means
+verification succeeded; `accepted_unverified` means the API accepted the write
+but resulting state could not be confirmed. `uncertain` means the write outcome
+is unknown. Writes are never automatically retried: read current state before
+retrying. Creation never guesses an ID if identification is ambiguous.
+Updates preserve total mileage, activity counts, tracking time and the existing
+image reference internally. Fresh reads reduce concurrent-update risk, but the
+API offers no atomic conflict protection. Assignment verification also checks
+mileage, linked-activity counts and default flags on the affected bikes.
+
 
 ## Derived Metrics Reference
 
