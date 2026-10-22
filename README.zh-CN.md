@@ -218,7 +218,7 @@ openclaw mcp add igpsport --command uvx --args igpsport-mcp \
 ```bash
 openclaw mcp list      # 看到 igpsport
 openclaw mcp status    # igpsport: stdio
-openclaw mcp probe     # igpsport: 17 tools, resources, prompts
+openclaw mcp probe     # igpsport: 28 tools, resources, prompts
 ```
 
 `mcp` 是热生效字段,无需重启 gateway,下一轮会话起即可调用;必要时 `openclaw mcp reload` 强制刷新运行时缓存。之后在你接入的聊天渠道(Discord / Telegram / Slack 等)里直接用自然语言提问即可。
@@ -268,7 +268,7 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 
 > 用 `uvx igpsport-mcp` 一次性运行的没有「本体」需要卸载,只需做第 2、3 步即可。
 
-## 提供的 17 个工具
+## 提供的 28 个工具
 
 **活动与训练(9)**
 
@@ -308,6 +308,43 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.cache\igpsport-mcp"
 | `delete_workout` | 删除课程。**破坏性、不可恢复**:默认只返回确认预览,需再带 `confirm=true` 才真正删除 |
 
 > 功率目标支持绝对瓦数、%FTP(用你的 FTP 自动换算)、功率区间;也支持心率、踏频、速度目标。时长可按时间/距离/卡路里/手动按圈。课程创建后会出现在 iGPSport App 的「训练课程」里,可同步到码表执行。
+
+
+### 自行车与活动关联（11 个，国服和国际版）
+
+复用现有 client、登录和 token，支持 `IGPSPORT_REGION=cn`（默认）和 `intl`。
+使用对应区域的主机和鉴权：国服 WASM 签名，国际版 JWT。
+国服端点兼容性基于国际版 API 协议假设，尚未通过国服账号实测。
+装备数据实时读取，不使用 SQLite/FIT 缓存；不提供图片操作。
+
+| 工具 | 参数与行为 |
+|---|---|
+| `list_bikes` | `status="active"`（active/retired/all）、`limit=20`（1–100）、`offset=0` |
+| `get_bike` | `bike_id`；搜索使用中和已退役车辆 |
+| `get_bike_options` | 预设车型及车架尺寸 |
+| `create_bike` | 类型化 `bike` 对象，支持 `dry_run=false` |
+| `update_bike` | `bike_id`、部分字段 `changes`，支持 `dry_run=false` |
+| `set_default_bike` | `bike_id`；车辆必须未退役 |
+| `set_bike_retired` | `bike_id`、布尔值 `retired` |
+| `reset_bike_odometer` | `bike_id`；仅清零当前里程表 |
+| `delete_bike` | `bike_id`、`confirm=false`；默认预览，删除前必须退役 |
+| `get_activity_bike` | `ride_id`；返回关联车辆或 null |
+| `set_activity_bike` | `ride_id`、`bike_id`（字符串或 null 取消关联） |
+
+创建必填 `brand`、`model`、`bike_type`、`weight_kg`、`wheel_circumference_mm`。
+车型和 `frame_size` 支持预设整数 ID 或自定义文本（车型最多 14 字符）。
+默认当前 UTC 年份、M 码（ID 6）、175 mm 曲柄、初始/当前里程为零、无保养间隔、
+现在开始追踪、非默认且未退役。可选字段：`year`、`frame_size`、`crank_length_mm`、
+`initial_mileage_km`、`current_odometer_km`、`maintenance_interval_km`（0 禁用保养）。
+使用公里、公斤、毫米；API 边界转换为整数米/克。更新时省略不改的字段，不接受 null。
+
+返回 snake_case 字段、明确单位、布尔标志和 ISO 8601 UTC 追踪时间。
+写入后回读：`confirmed` 为已验证；`accepted_unverified` 为接口接受但无法确认结果；
+`uncertain` 为写入结果未知。写操作不自动重试，重试前先读取当前状态。
+创建车辆识别不唯一时不会猜测 ID 或再次创建。
+更新内部保留总里程、关联活动数、追踪时间及图片引用；新鲜读取可降低并发覆盖风险，
+但 API 不提供原子冲突保护。活动关联还验证受影响车辆的里程、活动数和默认标志。
+
 
 ## 派生指标说明
 

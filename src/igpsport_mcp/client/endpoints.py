@@ -96,3 +96,16 @@ def base_headers(profile=None, **overrides: str) -> dict[str, str]:
 
     headers.update(overrides)
     return headers
+
+
+# Gear API shared by both regions (CN compatibility assumed, not live-verified).
+PATH_GEAR_LIST = "/service/mobile/api/Equipment/GetMemberEquipmentList"
+PATH_GEAR_TYPES = "/service/mobile/api/Equipment/GetEquipmentTypeList"
+PATH_GEAR_SIZES = "/service/mobile/api/Equipment/GetEquipmentSizeList"
+PATH_GEAR_ACTIVATE = "/service/mobile/api/Equipment/ActivatedMemberEquipment"
+PATH_GEAR_RETIRE = "/service/mobile/api/Equipment/RetiredMemberEquipment"
+PATH_GEAR_RESET = "/service/mobile/api/Equipment/ResetMemberEquipmentPeriodMileage"
+PATH_GEAR_DELETE = "/service/mobile/api/Equipment/DelMemberEquipment"
+PATH_GEAR_RELATION = "/service/mobile/api/Equipment/RideActivityRelationMemberEquipment"
+PATH_GEAR_SAVE = "/service/mobile/api/v2/Equipment/EditMemberEquipment"
+PATH_GEAR_ACTIVITY_DETAIL = "/service/sportg/sporth/activity/queryActivityDetail"

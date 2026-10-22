@@ -149,18 +149,19 @@ class IGPSportClient:
 
     # -- HTTP with retry -----------------------------------------------------
 
-    def _send(self, request: httpx.Request) -> httpx.Response:
+    def _send(self, request: httpx.Request, *, retry: bool = True) -> httpx.Response:
         last_exc: Exception | None = None
-        for attempt in range(_MAX_RETRIES):
+        attempts = _MAX_RETRIES if retry else 1
+        for attempt in range(attempts):
             try:
                 return self._http.send(request)
             except httpx.RequestError as exc:
                 last_exc = exc
-                if attempt < _MAX_RETRIES - 1:
+                if attempt < attempts - 1:
                     time.sleep(_BACKOFF_BASE_S * (2**attempt))
                     logger.warning("request failed (%s), retry %d", exc, attempt + 1)
         raise IGPSportAPIChangedError(
-            f"Network error after {_MAX_RETRIES} attempts: {last_exc}"
+            f"Network error after {attempts} attempts: {last_exc}"
         ) from last_exc
 
     def _request_raw(
@@ -171,6 +172,7 @@ class IGPSportClient:
         body: str | None = None,
         jwt: str | None = None,
         signed: bool = True,
+        retry: bool = True,
         **hdr_overrides: str,
     ) -> dict[str, Any]:
         body_str = body or ""
@@ -184,7 +186,7 @@ class IGPSportClient:
             headers=headers,
             content=body_str.encode("utf-8") if body else None,
         )
-        response = self._send(request)
+        response = self._send(request, retry=retry)
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict) or "code" not in payload:
@@ -198,9 +200,12 @@ class IGPSportClient:
         *,
         body: str | None = None,
         jwt: str | None = None,
+        retry: bool = True,
         **hdr_overrides: str,
     ) -> Any:
-        payload = self._request_raw(method, full_path, body=body, jwt=jwt, **hdr_overrides)
+        payload = self._request_raw(
+            method, full_path, body=body, jwt=jwt, retry=retry, **hdr_overrides
+        )
         if payload.get("code") != 0:
             raise IGPSportAPIChangedError(
                 f"{full_path} returned code={payload.get('code')} "
@@ -482,3 +487,44 @@ class IGPSportClient:
         """Delete a custom workout."""
         full_path = f"{ep.PATH_WORKOUT_DELETE}?id={workout_id}"
         self._request_business("POST", full_path, body="{}", jwt=self._jwt(), **self._WO_HDR)
+
+    # -- gear (both regions, shared session/auth) ----------------------------
+
+    def list_equipment(self, retired: bool, page: int = 1, page_size: int = 20) -> Any:
+        path = f"{ep.PATH_GEAR_LIST}?IsRetired={int(retired)}&PageIndex={page}&pageSize={page_size}"
+        return self._request_business("GET", path, jwt=self._jwt())
+
+    def get_equipment_types(self) -> Any:
+        return self._request_business("GET", ep.PATH_GEAR_TYPES, jwt=self._jwt())
+
+    def get_equipment_sizes(self) -> Any:
+        return self._request_business("GET", ep.PATH_GEAR_SIZES, jwt=self._jwt())
+
+    def get_activity_equipment_detail(self, ride_id: int) -> Any:
+        path = f"{ep.PATH_GEAR_ACTIVITY_DETAIL}?activityId={ride_id}"
+        return self._request_business("GET", path, jwt=self._jwt())
+
+    def _gear_write(self, path: str, data: dict[str, Any]) -> None:
+        result = self._request_business(
+            "POST", path, body=json.dumps(data), jwt=self._jwt(), retry=False
+        )
+        if result is not True:
+            raise IGPSportAPIChangedError("Gear write returned unexpected data; outcome uncertain")
+
+    def save_equipment(self, data: dict[str, Any]) -> None:
+        self._gear_write(ep.PATH_GEAR_SAVE, data)
+
+    def activate_equipment(self, bike_id: str) -> None:
+        self._gear_write(ep.PATH_GEAR_ACTIVATE, {"id": bike_id, "isActivated": 1})
+
+    def retire_equipment(self, bike_id: str, retired: bool) -> None:
+        self._gear_write(ep.PATH_GEAR_RETIRE, {"id": bike_id, "isRetired": int(retired)})
+
+    def reset_equipment_odometer(self, bike_id: str) -> None:
+        self._gear_write(ep.PATH_GEAR_RESET, {"id": bike_id})
+
+    def delete_equipment(self, bike_id: str) -> None:
+        self._gear_write(ep.PATH_GEAR_DELETE, {"id": bike_id})
+
+    def set_activity_equipment(self, data: dict[str, Any]) -> None:
+        self._gear_write(ep.PATH_GEAR_RELATION, data)
